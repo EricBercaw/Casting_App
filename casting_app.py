@@ -429,13 +429,20 @@ class CastingApp(tk.Tk):
                 APPLE_TV_IP,
 
                 "-hwaccel",
-                "none",
+                "auto",
 
                 "-fps",
                 "30",
 
                 "-bitrate",
-                "3500"
+                "0",
+
+                "-target-latency-ms",
+                "170",
+
+                "-port-range",
+                "60000-60010"
+
             ]
 
 
