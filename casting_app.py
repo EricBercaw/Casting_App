@@ -51,6 +51,8 @@ class CastingApp(tk.Tk):
             value="cast"
         )
 
+        self.audio_offset_ms = tk.IntVar(value=0)
+
         self.create_ui()
         self.refresh_all()
 
@@ -205,6 +207,69 @@ class CastingApp(tk.Tk):
             pady=(10, 0)
         )
 
+
+
+        # =================================================
+        # AUDIO SYNC OFFSET
+        # =================================================
+
+        offset_frame = ttk.Frame(
+            audio_mode_frame
+        )
+
+        offset_frame.pack(
+            anchor="w",
+            pady=(12, 0)
+        )
+
+
+        ttk.Label(
+            offset_frame,
+            text="Apple TV audio sync:"
+        ).pack(
+            side="left"
+        )
+
+
+        ttk.Button(
+            offset_frame,
+            text="Audio -5 ms",
+            command=lambda: self.adjust_audio_offset(-5)
+        ).pack(
+            side="left",
+            padx=(10, 0)
+        )
+
+
+        ttk.Button(
+            offset_frame,
+            text="Reset",
+            command=self.reset_audio_offset
+        ).pack(
+            side="left",
+            padx=(6, 0)
+        )
+
+
+        ttk.Button(
+            offset_frame,
+            text="Audio +5 ms",
+            command=lambda: self.adjust_audio_offset(5)
+        ).pack(
+            side="left",
+            padx=(6, 0)
+        )
+
+
+        self.audio_offset_status = ttk.Label(
+            audio_mode_frame,
+            text="Audio offset: 0 ms"
+        )
+
+        self.audio_offset_status.pack(
+            anchor="w",
+            pady=(8, 0)
+        )
 
         # =================================================
         # BLUETOOTH SECTION
@@ -363,6 +428,114 @@ class CastingApp(tk.Tk):
             )
 
 
+
+    # =====================================================
+    # AUDIO SYNC OFFSET
+    # =====================================================
+
+    def update_audio_offset_status(self):
+
+        offset = self.audio_offset_ms.get()
+
+        if offset > 0:
+
+            text = (
+                f"Audio offset: +{offset} ms "
+                "(audio later)"
+            )
+
+        elif offset < 0:
+
+            text = (
+                f"Audio offset: {offset} ms "
+                "(audio earlier)"
+            )
+
+        else:
+
+            text = "Audio offset: 0 ms"
+
+        self.audio_offset_status.config(
+            text=text
+        )
+
+
+    def restart_cast_for_audio_offset(self):
+
+        is_casting = (
+            self.cast_process
+            and
+            self.cast_process.poll() is None
+        )
+
+        # The audio offset only affects Apple TV audio mode.
+        if (
+            is_casting
+            and
+            self.audio_mode.get() == "cast"
+        ):
+
+            self.stop_cast()
+
+            self.cast_status.config(
+                text="Restarting cast with new audio sync..."
+            )
+
+            # Give Doubletake / Apple TV a moment to close
+            # the old AirPlay session before reconnecting.
+            self.after(
+                700,
+                self.start_cast
+            )
+
+
+    def adjust_audio_offset(
+        self,
+        delta
+    ):
+
+        current = self.audio_offset_ms.get()
+
+        new_offset = current + delta
+
+        # Plenty of adjustment range while preventing
+        # accidental extreme values.
+        new_offset = max(
+            -100,
+            min(
+                100,
+                new_offset
+            )
+        )
+
+        if new_offset == current:
+
+            return
+
+        self.audio_offset_ms.set(
+            new_offset
+        )
+
+        self.update_audio_offset_status()
+
+        self.restart_cast_for_audio_offset()
+
+
+    def reset_audio_offset(self):
+
+        if self.audio_offset_ms.get() == 0:
+
+            return
+
+        self.audio_offset_ms.set(
+            0
+        )
+
+        self.update_audio_offset_status()
+
+        self.restart_cast_for_audio_offset()
+
+
     # =====================================================
     # HELPER
     # =====================================================
@@ -435,11 +608,21 @@ class CastingApp(tk.Tk):
                 "-bitrate",
                 "0",
 
+                # Use Doubletake's automatic A/V timing policy.
                 "-target-latency-ms",
                 "0",
 
+                # Add extra buffering to BOTH audio and video
+                # while preserving their normal relative timing.
                 "-latency-margin-ms",
                 "40",
+
+                # Fine A/V synchronization adjustment.
+                #
+                # Positive = audio later
+                # Negative = audio earlier
+                "-audio-offset-ms",
+                str(self.audio_offset_ms.get()),
 
                 "-port-range",
                 "60000-60010"
