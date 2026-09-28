@@ -433,7 +433,7 @@ class CastingApp(tk.Tk):
                 "0",
 
                 "-target-latency-ms",
-                "0",
+                "110",
 
                 "-port-range",
                 "60000-60010"
