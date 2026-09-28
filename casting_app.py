@@ -14,7 +14,6 @@ from tkinter import ttk, messagebox
 # =========================================================
 
 DOUBLETAKE_PATH = "/home/ericb/doubletake/bin/doubletake"
-
 APPLE_TV_IP = "192.168.86.21"
 
 
@@ -25,17 +24,13 @@ APPLE_TV_IP = "192.168.86.21"
 class CastingApp(tk.Tk):
 
     def __init__(self):
-
         super().__init__()
 
         self.title("Apple TV Cast")
-
         self.geometry("650x650")
-
         self.resizable(True, True)
 
         self.cast_process = None
-
         self.bluetooth_devices = {}
 
         # -------------------------------------------------
@@ -54,7 +49,6 @@ class CastingApp(tk.Tk):
         )
 
         self.create_ui()
-
         self.refresh_all()
 
 
@@ -328,7 +322,8 @@ class CastingApp(tk.Tk):
                 "Apple TV Audio:\n"
                 "1. Select Apple TV — Cast video + audio.\n"
                 "2. Click Cast Screen.\n"
-                "3. Apple TV receives both video and cast audio."
+                "3. Apple TV receives both video and cast audio.\n\n"
+                "Sleep is automatically disabled while casting."
             ),
             justify="left"
         )
@@ -418,10 +413,10 @@ class CastingApp(tk.Tk):
         try:
 
             # -------------------------------------------------
-            # BASE CAST COMMAND
+            # BASE DOUBLETAKE COMMAND
             # -------------------------------------------------
 
-            command = [
+            cast_command = [
 
                 DOUBLETAKE_PATH,
 
@@ -442,7 +437,6 @@ class CastingApp(tk.Tk):
 
                 "-port-range",
                 "60000-60010"
-
             ]
 
 
@@ -450,23 +444,46 @@ class CastingApp(tk.Tk):
             # AUDIO MODE
             #
             # BLUETOOTH:
-            # Add -no-audio.
-            # Apple TV gets video only.
+            #   Apple TV receives video only.
             #
             # CAST:
-            # Do NOT add -no-audio.
-            # Doubletake sends video + audio.
+            #   Apple TV receives video + audio.
             # -------------------------------------------------
 
             if self.audio_mode.get() == "bluetooth":
 
-                command.append(
+                cast_command.append(
                     "-no-audio"
                 )
 
 
             # -------------------------------------------------
-            # START DOUBLETAKE
+            # PREVENT COMPUTER FROM SLEEPING
+            #
+            # systemd-inhibit remains active for as long as
+            # Doubletake is running.
+            #
+            # When Stop Casting is clicked, the entire process
+            # group is killed and the sleep inhibitor disappears.
+            # -------------------------------------------------
+
+            command = [
+
+                "systemd-inhibit",
+
+                "--what=sleep:idle",
+
+                "--who=Apple TV Cast",
+
+                "--why=Casting screen to Apple TV",
+
+                "--mode=block"
+
+            ] + cast_command
+
+
+            # -------------------------------------------------
+            # START CAST
             # -------------------------------------------------
 
             self.cast_process = subprocess.Popen(
@@ -494,7 +511,8 @@ class CastingApp(tk.Tk):
                 self.cast_status.config(
                     text=(
                         "Casting to Living Room Apple TV "
-                        "— Video Only | Audio → Bluetooth"
+                        "— Video Only | Audio → Bluetooth "
+                        "| Sleep Disabled"
                     )
                 )
 
@@ -503,7 +521,7 @@ class CastingApp(tk.Tk):
                 self.cast_status.config(
                     text=(
                         "Casting to Living Room Apple TV "
-                        "— Video + Audio"
+                        "— Video + Audio | Sleep Disabled"
                     )
                 )
 
@@ -677,7 +695,6 @@ class CastingApp(tk.Tk):
 
 
                 mac = match.group(1)
-
                 name = match.group(2)
 
 
@@ -888,9 +905,6 @@ class CastingApp(tk.Tk):
 
         # -------------------------------------------------
         # AUTOMATICALLY SELECT BLUETOOTH CAST MODE
-        #
-        # Since the user explicitly selected a Bluetooth
-        # speaker, the next screen cast will be video-only.
         # -------------------------------------------------
 
         self.audio_mode.set(
