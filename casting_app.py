@@ -42,10 +42,13 @@ class CastingApp(tk.Tk):
         #
         # cast:
         #   Apple TV = video + audio
+        #
+        # DEFAULT:
+        #   Apple TV video + audio
         # -------------------------------------------------
 
         self.audio_mode = tk.StringVar(
-            value="bluetooth"
+            value="cast"
         )
 
         self.create_ui()
@@ -171,9 +174,9 @@ class CastingApp(tk.Tk):
 
         ttk.Radiobutton(
             audio_mode_frame,
-            text="Bluetooth Speaker — Apple TV receives video only",
+            text="Apple TV — Cast video + audio",
             variable=self.audio_mode,
-            value="bluetooth",
+            value="cast",
             command=self.audio_mode_changed
         ).pack(
             anchor="w"
@@ -182,9 +185,9 @@ class CastingApp(tk.Tk):
 
         ttk.Radiobutton(
             audio_mode_frame,
-            text="Apple TV — Cast video + audio",
+            text="Bluetooth Speaker — Apple TV receives video only",
             variable=self.audio_mode,
-            value="cast",
+            value="bluetooth",
             command=self.audio_mode_changed
         ).pack(
             anchor="w",
@@ -194,7 +197,7 @@ class CastingApp(tk.Tk):
 
         self.audio_mode_status = ttk.Label(
             audio_mode_frame,
-            text="Selected: Bluetooth Speaker"
+            text="Selected: Apple TV (video + audio)"
         )
 
         self.audio_mode_status.pack(
@@ -314,15 +317,15 @@ class CastingApp(tk.Tk):
             main,
             text=(
                 "\nHow to use:\n\n"
-                "Bluetooth Audio:\n"
-                "1. Select Bluetooth Speaker above.\n"
-                "2. Connect your Bluetooth speaker.\n"
-                "3. Click Cast Screen.\n"
-                "4. Apple TV receives video only; audio stays on Bluetooth.\n\n"
-                "Apple TV Audio:\n"
-                "1. Select Apple TV — Cast video + audio.\n"
+                "Apple TV Audio — Default:\n"
+                "1. Apple TV — Cast video + audio is selected automatically.\n"
                 "2. Click Cast Screen.\n"
                 "3. Apple TV receives both video and cast audio.\n\n"
+                "Bluetooth Audio:\n"
+                "1. Select or connect your Bluetooth speaker.\n"
+                "2. Bluetooth mode will be selected automatically.\n"
+                "3. Click Cast Screen.\n"
+                "4. Apple TV receives video only; audio stays on Bluetooth.\n\n"
                 "Sleep is automatically disabled while casting."
             ),
             justify="left"
@@ -433,10 +436,11 @@ class CastingApp(tk.Tk):
                 "0",
 
                 "-target-latency-ms",
-                "110",
+                "85",
 
                 "-port-range",
                 "60000-60010"
+
             ]
 
 
@@ -444,9 +448,11 @@ class CastingApp(tk.Tk):
             # AUDIO MODE
             #
             # BLUETOOTH:
+            #   Add -no-audio.
             #   Apple TV receives video only.
             #
             # CAST:
+            #   No -no-audio option.
             #   Apple TV receives video + audio.
             # -------------------------------------------------
 
@@ -459,12 +465,6 @@ class CastingApp(tk.Tk):
 
             # -------------------------------------------------
             # PREVENT COMPUTER FROM SLEEPING
-            #
-            # systemd-inhibit remains active for as long as
-            # Doubletake is running.
-            #
-            # When Stop Casting is clicked, the entire process
-            # group is killed and the sleep inhibitor disappears.
             # -------------------------------------------------
 
             command = [
@@ -596,10 +596,6 @@ class CastingApp(tk.Tk):
 
         try:
 
-            # -------------------------------------------------
-            # CHECK BLUETOOTH SERVICE
-            # -------------------------------------------------
-
             service = self.run_command(
                 [
                     "systemctl",
@@ -624,10 +620,6 @@ class CastingApp(tk.Tk):
                     "Bluetooth service: Inactive"
                 )
 
-
-            # -------------------------------------------------
-            # CHECK BLUETOOTH ADAPTER
-            # -------------------------------------------------
 
             controller = self.run_command(
                 [
@@ -657,10 +649,6 @@ class CastingApp(tk.Tk):
                 text=status_text
             )
 
-
-            # -------------------------------------------------
-            # GET PAIRED DEVICES
-            # -------------------------------------------------
 
             devices = self.run_command(
                 [
@@ -817,17 +805,12 @@ class CastingApp(tk.Tk):
             )
 
 
-        # Give PipeWire time to create
-        # the Bluetooth audio sink.
+        # Give PipeWire time to create the Bluetooth sink.
 
         time.sleep(
             2
         )
 
-
-        # -------------------------------------------------
-        # FIND PIPEWIRE / PULSEAUDIO BLUETOOTH SINK
-        # -------------------------------------------------
 
         sink = self.find_bluetooth_sink(
             mac
@@ -861,10 +844,7 @@ class CastingApp(tk.Tk):
 
 
         # -------------------------------------------------
-        # MOVE EXISTING AUDIO STREAMS
-        #
-        # This moves things already playing,
-        # such as Spotify, onto Bluetooth.
+        # MOVE EXISTING AUDIO STREAMS TO BLUETOOTH
         # -------------------------------------------------
 
         inputs = self.run_command(
@@ -904,7 +884,8 @@ class CastingApp(tk.Tk):
 
 
         # -------------------------------------------------
-        # AUTOMATICALLY SELECT BLUETOOTH CAST MODE
+        # USER EXPLICITLY SELECTED BLUETOOTH AUDIO,
+        # SO SWITCH CASTING MODE TO BLUETOOTH
         # -------------------------------------------------
 
         self.audio_mode.set(
@@ -1042,7 +1023,6 @@ class CastingApp(tk.Tk):
     def refresh_all(self):
 
         self.refresh_bluetooth()
-
         self.audio_mode_changed()
 
 
