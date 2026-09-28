@@ -27,7 +27,7 @@ class CastingApp(tk.Tk):
         super().__init__()
 
         self.title("Apple TV Cast")
-        self.geometry("650x650")
+        self.geometry("650x750")
         self.resizable(True, True)
 
         self.cast_process = None
@@ -52,6 +52,9 @@ class CastingApp(tk.Tk):
         )
 
         self.audio_offset_ms = tk.IntVar(value=0)
+
+        # Casting resolution / quality
+        self.quality = tk.StringVar(value="720p")
 
         self.create_ui()
         self.refresh_all()
@@ -155,6 +158,75 @@ class CastingApp(tk.Tk):
         self.stop_button.pack(
             side="left",
             padx=(10, 0)
+        )
+
+
+
+        # =================================================
+        # CAST QUALITY
+        # =================================================
+
+        quality_frame = ttk.LabelFrame(
+            main,
+            text="Cast Quality",
+            padding=12
+        )
+
+        quality_frame.pack(
+            fill="x",
+            pady=(18, 0)
+        )
+
+
+        ttk.Label(
+            quality_frame,
+            text="Resolution:"
+        ).pack(
+            side="left",
+            padx=(0, 12)
+        )
+
+
+        ttk.Radiobutton(
+            quality_frame,
+            text="480p",
+            variable=self.quality,
+            value="480p"
+        ).pack(
+            side="left",
+            padx=(0, 12)
+        )
+
+
+        ttk.Radiobutton(
+            quality_frame,
+            text="720p",
+            variable=self.quality,
+            value="720p"
+        ).pack(
+            side="left",
+            padx=(0, 12)
+        )
+
+
+        ttk.Radiobutton(
+            quality_frame,
+            text="1080p",
+            variable=self.quality,
+            value="1080p"
+        ).pack(
+            side="left",
+            padx=(0, 12)
+        )
+
+
+        ttk.Radiobutton(
+            quality_frame,
+            text="4K",
+            variable=self.quality,
+            value="4k"
+        ).pack(
+            side="left"
         )
 
 
@@ -614,6 +686,8 @@ class CastingApp(tk.Tk):
 
                 # Add extra buffering to BOTH audio and video
                 # while preserving their normal relative timing.
+                "-quality",
+                self.quality.get(),
                 "-latency-margin-ms",
                 "40",
 
