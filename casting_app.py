@@ -427,7 +427,7 @@ class CastingApp(tk.Tk):
                 "auto",
 
                 "-fps",
-                "35",
+                "30",
 
                 "-bitrate",
                 "0",
