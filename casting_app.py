@@ -427,13 +427,13 @@ class CastingApp(tk.Tk):
                 "auto",
 
                 "-fps",
-                "30",
+                "40",
 
                 "-bitrate",
                 "0",
 
                 "-target-latency-ms",
-                "170",
+                "120",
 
                 "-port-range",
                 "60000-60010"
