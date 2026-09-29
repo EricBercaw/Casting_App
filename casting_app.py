@@ -30,6 +30,38 @@ RESOLUTIONS = {
 
 
 # =========================================================
+# LATENCY / SYNC SETTINGS
+# =========================================================
+
+# Keep Doubletake's automatic AirPlay timing policy.
+#
+# Normal automatic timing is approximately:
+#
+# Video = 75 ms
+# Audio = 85 ms
+#
+# We then add a shared 40 ms stability margin:
+#
+# Video = ~115 ms
+# Audio = ~125 ms
+#
+# Finally, the built-in -5 ms audio calibration gives:
+#
+# Video = ~115 ms
+# Audio = ~120 ms
+#
+# The UI +/- 5 ms controls adjust AUDIO ONLY around
+# this calibrated baseline.
+
+LATENCY_MARGIN_MS = 40
+
+BASE_AUDIO_OFFSET_MS = -5
+
+NOMINAL_VIDEO_LATENCY_MS = 115
+NOMINAL_AUDIO_LATENCY_MS = 120
+
+
+# =========================================================
 # MAIN APP
 # =========================================================
 
@@ -39,7 +71,7 @@ class CastingApp(tk.Tk):
         super().__init__()
 
         self.title("Apple TV Cast")
-        self.geometry("720x850")
+        self.geometry("740x880")
         self.resizable(True, True)
 
         self.cast_process = None
@@ -63,8 +95,6 @@ class CastingApp(tk.Tk):
 
         # -------------------------------------------------
         # DEFAULT VIDEO RESOLUTION
-        #
-        # 480p is selected when the app starts.
         # -------------------------------------------------
 
         self.resolution = tk.StringVar(
@@ -72,16 +102,27 @@ class CastingApp(tk.Tk):
         )
 
         # -------------------------------------------------
-        # AUDIO SYNC OFFSET
+        # AUDIO FINE ADJUSTMENT
         #
-        # Base video timing = 120 ms
-        # Base audio timing = 120 ms
+        # IMPORTANT:
         #
-        # -5 = audio earlier
-        # +5 = audio later
+        # This is the USER adjustment around our calibrated
+        # baseline.
+        #
+        # 0 means:
+        #   effective Doubletake audio offset = -5 ms
+        #   nominal audio timing = ~120 ms
+        #
+        # User -5 means:
+        #   effective offset = -10 ms
+        #   nominal audio timing = ~115 ms
+        #
+        # User +5 means:
+        #   effective offset = 0 ms
+        #   nominal audio timing = ~125 ms
         # -------------------------------------------------
 
-        self.audio_offset_ms = tk.IntVar(
+        self.audio_adjust_ms = tk.IntVar(
             value=0
         )
 
@@ -124,8 +165,8 @@ class CastingApp(tk.Tk):
         subtitle = ttk.Label(
             main,
             text=(
-                "Cast desktop to Apple TV "
-                "with selectable video quality and audio output"
+                "Cast desktop to Apple TV with selectable "
+                "resolution and fine audio synchronization"
             )
         )
 
@@ -152,7 +193,8 @@ class CastingApp(tk.Tk):
 
         self.cast_status = ttk.Label(
             cast_frame,
-            text="Not Casting"
+            text="Not Casting",
+            wraplength=680
         )
 
         self.cast_status.pack(
@@ -277,7 +319,7 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # AUDIO OUTPUT
+        # AUDIO OUTPUT MODE
         # =================================================
 
         audio_mode_frame = ttk.LabelFrame(
@@ -330,79 +372,99 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # AUDIO SYNC
+        # AUDIO SYNC CONTROLS
         # =================================================
 
-        offset_frame = ttk.Frame(
-            audio_mode_frame
+        sync_frame = ttk.LabelFrame(
+            main,
+            text="Audio Synchronization",
+            padding=12
         )
 
-        offset_frame.pack(
-            anchor="w",
-            pady=(14, 0)
+        sync_frame.pack(
+            fill="x",
+            pady=(18, 0)
         )
 
 
-        ttk.Label(
-            offset_frame,
-            text="Apple TV audio sync:"
+        sync_buttons = ttk.Frame(
+            sync_frame
+        )
+
+        sync_buttons.pack(
+            anchor="w"
+        )
+
+
+        ttk.Button(
+            sync_buttons,
+            text="Audio -5 ms",
+            command=lambda: self.adjust_audio(-5)
         ).pack(
             side="left"
         )
 
 
         ttk.Button(
-            offset_frame,
-            text="Audio -5 ms",
-            command=lambda: self.adjust_audio_offset(-5)
-        ).pack(
-            side="left",
-            padx=(10, 0)
-        )
-
-
-        ttk.Button(
-            offset_frame,
+            sync_buttons,
             text="Reset",
-            command=self.reset_audio_offset
+            command=self.reset_audio
         ).pack(
             side="left",
-            padx=(6, 0)
+            padx=(8, 0)
         )
 
 
         ttk.Button(
-            offset_frame,
+            sync_buttons,
             text="Audio +5 ms",
-            command=lambda: self.adjust_audio_offset(5)
+            command=lambda: self.adjust_audio(5)
         ).pack(
             side="left",
-            padx=(6, 0)
+            padx=(8, 0)
         )
 
 
-        self.audio_offset_status = ttk.Label(
-            audio_mode_frame,
-            text="Audio timing: 120 ms | Offset: 0 ms"
-        )
-
-        self.audio_offset_status.pack(
-            anchor="w",
-            pady=(8, 0)
-        )
-
-
-        timing_info = ttk.Label(
-            audio_mode_frame,
+        self.audio_sync_status = ttk.Label(
+            sync_frame,
             text=(
-                "Video remains fixed at 120 ms. "
-                "Audio offset adjusts audio only."
+                "Audio: ~120 ms | "
+                "Fine adjustment: 0 ms"
             )
         )
 
-        timing_info.pack(
+        self.audio_sync_status.pack(
+            anchor="w",
+            pady=(10, 0)
+        )
+
+
+        self.video_sync_status = ttk.Label(
+            sync_frame,
+            text=(
+                "Video: ~115 ms "
+                "(unchanged by audio adjustment)"
+            )
+        )
+
+        self.video_sync_status.pack(
             anchor="w",
             pady=(5, 0)
+        )
+
+
+        sync_explanation = ttk.Label(
+            sync_frame,
+            text=(
+                "A 40 ms playout margin is retained for stability. "
+                "The buttons adjust audio timing only."
+            ),
+            wraplength=660
+        )
+
+        sync_explanation.pack(
+            anchor="w",
+            pady=(8, 0)
         )
 
 
@@ -484,7 +546,7 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # COMPUTER AUDIO OUTPUT
+        # CURRENT COMPUTER AUDIO
         # =================================================
 
         audio_frame = ttk.LabelFrame(
@@ -516,11 +578,15 @@ class CastingApp(tk.Tk):
         info = ttk.Label(
             main,
             text=(
-                "\nDefault: 480p + Apple TV video/audio\n"
-                "Video timing: fixed at 120 ms\n"
-                "Audio timing: 120 ms + selected audio offset\n"
-                "Resolution/audio timing changes restart the cast automatically.\n"
-                "Sleep is automatically disabled while casting."
+                "\nDefault configuration:\n"
+                "• 480p video\n"
+                "• Apple TV video + audio\n"
+                "• Automatic AirPlay timing\n"
+                "• 40 ms additional stability margin\n"
+                "• ~115 ms nominal video timing\n"
+                "• ~120 ms nominal audio timing\n"
+                "• ±5 ms audio-only fine adjustment\n"
+                "• Sleep disabled while casting"
             ),
             justify="left"
         )
@@ -566,9 +632,7 @@ class CastingApp(tk.Tk):
 
     def audio_mode_changed(self):
 
-        mode = self.audio_mode.get()
-
-        if mode == "bluetooth":
+        if self.audio_mode.get() == "bluetooth":
 
             self.audio_mode_status.config(
                 text=(
@@ -590,87 +654,133 @@ class CastingApp(tk.Tk):
 
 
     # =====================================================
-    # AUDIO SYNC OFFSET
+    # AUDIO LATENCY
     # =====================================================
 
-    def update_audio_offset_status(self):
+    def get_effective_audio_offset(self):
 
-        offset = self.audio_offset_ms.get()
+        return (
+            BASE_AUDIO_OFFSET_MS
+            + self.audio_adjust_ms.get()
+        )
 
-        audio_timing = 120 + offset
+
+    def get_nominal_audio_latency(self):
+
+        return (
+            NOMINAL_AUDIO_LATENCY_MS
+            + self.audio_adjust_ms.get()
+        )
 
 
-        if offset > 0:
+    def update_audio_sync_status(self):
 
-            offset_text = (
-                f"+{offset} ms"
+        adjustment = (
+            self.audio_adjust_ms.get()
+        )
+
+        audio_latency = (
+            self.get_nominal_audio_latency()
+        )
+
+
+        if adjustment > 0:
+
+            adjustment_text = (
+                f"+{adjustment} ms"
             )
 
         else:
 
-            offset_text = (
-                f"{offset} ms"
+            adjustment_text = (
+                f"{adjustment} ms"
             )
 
 
-        self.audio_offset_status.config(
+        self.audio_sync_status.config(
             text=(
-                f"Audio timing: {audio_timing} ms "
-                f"| Offset: {offset_text}"
+                f"Audio: ~{audio_latency} ms "
+                f"| Fine adjustment: {adjustment_text}"
             )
         )
 
 
-    def adjust_audio_offset(
+        self.video_sync_status.config(
+            text=(
+                f"Video: ~{NOMINAL_VIDEO_LATENCY_MS} ms "
+                "(unchanged by audio adjustment)"
+            )
+        )
+
+
+    def adjust_audio(
         self,
         delta
     ):
 
-        current = self.audio_offset_ms.get()
+        current = (
+            self.audio_adjust_ms.get()
+        )
 
-        new_offset = current + delta
+        new_value = (
+            current
+            + delta
+        )
 
-        # Limit fine adjustment to +/-100 ms.
 
-        new_offset = max(
+        # Fine adjustment range:
+        #
+        # -100 ms through +100 ms.
+        #
+        # Buttons still operate in exact 5 ms increments.
+
+        new_value = max(
             -100,
             min(
                 100,
-                new_offset
+                new_value
             )
         )
 
 
-        if new_offset == current:
+        if new_value == current:
             return
 
 
-        self.audio_offset_ms.set(
-            new_offset
+        self.audio_adjust_ms.set(
+            new_value
         )
 
-        self.update_audio_offset_status()
+        self.update_audio_sync_status()
 
         self.restart_cast_for_setting_change()
 
 
-    def reset_audio_offset(self):
+    def reset_audio(self):
 
-        if self.audio_offset_ms.get() == 0:
+        if self.audio_adjust_ms.get() == 0:
             return
 
 
-        self.audio_offset_ms.set(
+        # Reset returns to calibrated baseline:
+        #
+        # Fine adjustment = 0
+        #
+        # Effective Doubletake offset = -5 ms
+        #
+        # Nominal audio timing = ~120 ms.
+
+        self.audio_adjust_ms.set(
             0
         )
 
-        self.update_audio_offset_status()
+        self.update_audio_sync_status()
 
         self.restart_cast_for_setting_change()
 
 
     # =====================================================
-    # AUTO-RESTART AFTER SETTINGS CHANGE
+    # AUTO-RESTART AFTER A LIVE SETTING CHANGE
     # =====================================================
 
     def restart_cast_for_setting_change(self):
@@ -772,8 +882,9 @@ class CastingApp(tk.Tk):
         required = [
             "-width",
             "-height",
-            "-audio-offset-ms",
-            "-target-latency-ms"
+            "-target-latency-ms",
+            "-latency-margin-ms",
+            "-audio-offset-ms"
         ]
 
 
@@ -789,11 +900,11 @@ class CastingApp(tk.Tk):
             messagebox.showerror(
                 "Doubletake Build",
                 (
-                    "Your current Doubletake binary is missing "
-                    "required custom options:\n\n"
+                    "Your custom Doubletake binary "
+                    "is missing required options:\n\n"
                     + "\n".join(missing)
                     + "\n\n"
-                    "Rebuild your custom Doubletake version first."
+                    "Rebuild your customized Doubletake binary."
                 )
             )
 
@@ -813,7 +924,7 @@ class CastingApp(tk.Tk):
 
 
         if (
-            self.cast_process
+            self.cast_process is not None
             and
             self.cast_process.poll() is None
         ):
@@ -845,10 +956,20 @@ class CastingApp(tk.Tk):
             return
 
 
-        width, height = self.get_resolution()
+        width, height = (
+            self.get_resolution()
+        )
 
         selected_resolution = (
             self.resolution.get()
+        )
+
+        effective_audio_offset = (
+            self.get_effective_audio_offset()
+        )
+
+        nominal_audio_latency = (
+            self.get_nominal_audio_latency()
         )
 
 
@@ -857,29 +978,29 @@ class CastingApp(tk.Tk):
             # -------------------------------------------------
             # DOUBLETAKE COMMAND
             #
-            # IMPORTANT TIMING DESIGN:
+            # IMPORTANT AUDIO DESIGN
             #
-            # target-latency-ms = 120
+            # We intentionally DO NOT force:
             #
-            # This fixes BOTH streams to 120 ms first.
+            #     -target-latency-ms 120
             #
-            # audio-offset-ms then adjusts ONLY audio.
+            # because that replaces Doubletake's separate
+            # automatic video/audio timing with one joint
+            # target.
             #
-            # Video therefore remains fixed at 120 ms.
+            # Instead:
             #
-            # Examples:
+            # target-latency-ms = 0
             #
-            # offset  0:
-            #   video = 120
-            #   audio = 120
+            # preserves automatic AirPlay timing.
             #
-            # offset -5:
-            #   video = 120
-            #   audio = 115
+            # latency-margin-ms = 40
             #
-            # offset +5:
-            #   video = 120
-            #   audio = 125
+            # adds extra playout room to both streams.
+            #
+            # audio-offset-ms
+            #
+            # then modifies AUDIO ONLY.
             # -------------------------------------------------
 
             cast_command = [
@@ -909,23 +1030,37 @@ class CastingApp(tk.Tk):
                 height,
 
                 # ---------------------------------------------
-                # FIXED VIDEO/AUDIO BASE TIMING
+                # AUTOMATIC AIRPLAY LATENCY POLICY
                 # ---------------------------------------------
 
                 "-target-latency-ms",
-                "120",
+                "0",
 
                 # ---------------------------------------------
-                # AUDIO-ONLY FINE ADJUSTMENT
+                # ADDITIONAL STABILITY BUFFER
+                # ---------------------------------------------
+
+                "-latency-margin-ms",
+                str(
+                    LATENCY_MARGIN_MS
+                ),
+
+                # ---------------------------------------------
+                # AUDIO-ONLY SYNC OFFSET
+                #
+                # Baseline = -5 ms
+                #
+                # User controls add +/-5 ms increments
+                # on top of that baseline.
                 # ---------------------------------------------
 
                 "-audio-offset-ms",
                 str(
-                    self.audio_offset_ms.get()
+                    effective_audio_offset
                 ),
 
                 # ---------------------------------------------
-                # NETWORK PORT RANGE
+                # FIXED LOCAL UDP RANGE
                 # ---------------------------------------------
 
                 "-port-range",
@@ -965,7 +1100,7 @@ class CastingApp(tk.Tk):
 
 
             # -------------------------------------------------
-            # START DOUBLETAKE
+            # START CAST
             # -------------------------------------------------
 
             self.cast_process = subprocess.Popen(
@@ -984,15 +1119,18 @@ class CastingApp(tk.Tk):
             )
 
 
-            # Give Doubletake a moment to fail if one
-            # of the command-line arguments is invalid.
+            # Allow immediate argument/startup errors
+            # to surface.
 
             time.sleep(
                 0.15
             )
 
 
-            if self.cast_process.poll() is not None:
+            if (
+                self.cast_process.poll()
+                is not None
+            ):
 
                 self.cast_process = None
 
@@ -1001,7 +1139,7 @@ class CastingApp(tk.Tk):
                     (
                         "Doubletake exited immediately.\n\n"
                         "Check the custom Doubletake build "
-                        "and selected resolution."
+                        "and selected settings."
                     )
                 )
 
@@ -1009,28 +1147,24 @@ class CastingApp(tk.Tk):
 
 
             # -------------------------------------------------
-            # STATUS
+            # DISPLAY STATUS
             # -------------------------------------------------
 
-            offset = (
-                self.audio_offset_ms.get()
-            )
-
-            audio_timing = (
-                120 + offset
+            adjustment = (
+                self.audio_adjust_ms.get()
             )
 
 
-            if offset > 0:
+            if adjustment > 0:
 
-                offset_text = (
-                    f"+{offset} ms"
+                adjustment_text = (
+                    f"+{adjustment} ms"
                 )
 
             else:
 
-                offset_text = (
-                    f"{offset} ms"
+                adjustment_text = (
+                    f"{adjustment} ms"
                 )
 
 
@@ -1042,7 +1176,7 @@ class CastingApp(tk.Tk):
                     f"({width}×{height}) "
                     "— Video Only "
                     "| Audio → Bluetooth "
-                    "| Video 120 ms "
+                    f"| Video ~{NOMINAL_VIDEO_LATENCY_MS} ms "
                     "| Sleep Disabled"
                 )
 
@@ -1053,9 +1187,9 @@ class CastingApp(tk.Tk):
                     f"— {selected_resolution} "
                     f"({width}×{height}) "
                     "— Video + Audio "
-                    "| Video 120 ms "
-                    f"| Audio {audio_timing} ms "
-                    f"({offset_text}) "
+                    f"| Video ~{NOMINAL_VIDEO_LATENCY_MS} ms "
+                    f"| Audio ~{nominal_audio_latency} ms "
+                    f"| Fine {adjustment_text} "
                     "| Sleep Disabled"
                 )
 
@@ -1109,7 +1243,7 @@ class CastingApp(tk.Tk):
 
 
         # -------------------------------------------------
-        # STOP DOUBLETAKE
+        # STOP DOUBLETAKE / SYSTEMD INHIBITOR
         # -------------------------------------------------
 
         if self.cast_process:
@@ -1158,6 +1292,10 @@ class CastingApp(tk.Tk):
 
         try:
 
+            # -------------------------------------------------
+            # BLUETOOTH SERVICE
+            # -------------------------------------------------
+
             service = self.run_command(
                 [
                     "systemctl",
@@ -1182,6 +1320,10 @@ class CastingApp(tk.Tk):
                     "Bluetooth service: Inactive"
                 )
 
+
+            # -------------------------------------------------
+            # BLUETOOTH ADAPTER
+            # -------------------------------------------------
 
             controller = self.run_command(
                 [
@@ -1211,6 +1353,10 @@ class CastingApp(tk.Tk):
                 text=status_text
             )
 
+
+            # -------------------------------------------------
+            # PAIRED DEVICES
+            # -------------------------------------------------
 
             devices = self.run_command(
                 [
@@ -1343,7 +1489,7 @@ class CastingApp(tk.Tk):
 
 
         # -------------------------------------------------
-        # CONNECT BLUETOOTH
+        # CONNECT
         # -------------------------------------------------
 
         result = self.run_command(
@@ -1369,7 +1515,7 @@ class CastingApp(tk.Tk):
             )
 
 
-        # Give PipeWire time to create sink.
+        # Give PipeWire time to expose the new sink.
 
         time.sleep(
             2
@@ -1397,7 +1543,7 @@ class CastingApp(tk.Tk):
 
 
         # -------------------------------------------------
-        # SET DEFAULT AUDIO OUTPUT
+        # SET AS DEFAULT OUTPUT
         # -------------------------------------------------
 
         self.run_command(
@@ -1449,7 +1595,7 @@ class CastingApp(tk.Tk):
 
 
         # -------------------------------------------------
-        # SWITCH TO BLUETOOTH MODE
+        # SWITCH APP TO BLUETOOTH MODE
         # -------------------------------------------------
 
         self.audio_mode.set(
@@ -1457,7 +1603,6 @@ class CastingApp(tk.Tk):
         )
 
         self.audio_mode_changed()
-
 
         self.refresh_audio()
 
@@ -1549,7 +1694,7 @@ class CastingApp(tk.Tk):
 
 
     # =====================================================
-    # AUDIO STATUS
+    # COMPUTER AUDIO STATUS
     # =====================================================
 
     def refresh_audio(self):
@@ -1593,7 +1738,7 @@ class CastingApp(tk.Tk):
 
         self.resolution_changed()
 
-        self.update_audio_offset_status()
+        self.update_audio_sync_status()
 
 
     # =====================================================
