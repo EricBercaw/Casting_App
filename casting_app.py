@@ -32,26 +32,24 @@ RESOLUTIONS = {
 # =========================================================
 # LATENCY / SYNC SETTINGS
 # =========================================================
-
-# Keep Doubletake's automatic AirPlay timing policy.
 #
-# Normal automatic timing is approximately:
+# Doubletake automatic screen timing is approximately:
 #
-# Video = 75 ms
-# Audio = 85 ms
+#   Video = 75 ms
+#   Audio = 85 ms
 #
-# We then add a shared 40 ms stability margin:
+# We add 90 ms of shared buffering:
 #
-# Video = ~115 ms
-# Audio = ~125 ms
+#   Video = ~165 ms
+#   Audio = ~175 ms
 #
-# Finally, the built-in -5 ms audio calibration gives:
+# Then the default -5 ms audio calibration gives:
 #
-# Video = ~115 ms
-# Audio = ~120 ms
+#   Video = ~165 ms
+#   Audio = ~170 ms
 #
-# The UI +/- 5 ms controls adjust AUDIO ONLY around
-# this calibrated baseline.
+# The +/-5 ms buttons modify AUDIO ONLY.
+# =========================================================
 
 LATENCY_MARGIN_MS = 90
 
@@ -59,6 +57,7 @@ BASE_AUDIO_OFFSET_MS = -5
 
 NOMINAL_VIDEO_LATENCY_MS = 165
 NOMINAL_AUDIO_LATENCY_MS = 170
+
 
 # =========================================================
 # MAIN APP
@@ -75,17 +74,16 @@ class CastingApp(tk.Tk):
 
         self.cast_process = None
         self.bluetooth_devices = {}
+
         self.restart_job = None
+        self.cast_monitor_job = None
+
+        # Screensaver inhibitor state.
+        self.screensaver_window_id = None
+        self.screensaver_suspended = False
 
         # -------------------------------------------------
         # DEFAULT AUDIO MODE
-        #
-        # cast:
-        #   Apple TV receives video + audio
-        #
-        # bluetooth:
-        #   Apple TV receives video only
-        #   Bluetooth speaker receives audio
         # -------------------------------------------------
 
         self.audio_mode = tk.StringVar(
@@ -93,7 +91,7 @@ class CastingApp(tk.Tk):
         )
 
         # -------------------------------------------------
-        # DEFAULT VIDEO RESOLUTION
+        # DEFAULT RESOLUTION
         # -------------------------------------------------
 
         self.resolution = tk.StringVar(
@@ -101,24 +99,17 @@ class CastingApp(tk.Tk):
         )
 
         # -------------------------------------------------
-        # AUDIO FINE ADJUSTMENT
+        # USER AUDIO FINE ADJUSTMENT
         #
-        # IMPORTANT:
+        # 0 means calibrated default:
         #
-        # This is the USER adjustment around our calibrated
-        # baseline.
+        #   BASE_AUDIO_OFFSET_MS = -5 ms
         #
-        # 0 means:
-        #   effective Doubletake audio offset = -5 ms
-        #   nominal audio timing = ~120 ms
-        #
-        # User -5 means:
+        # Audio -5:
         #   effective offset = -10 ms
-        #   nominal audio timing = ~115 ms
         #
-        # User +5 means:
+        # Audio +5:
         #   effective offset = 0 ms
-        #   nominal audio timing = ~125 ms
         # -------------------------------------------------
 
         self.audio_adjust_ms = tk.IntVar(
@@ -150,33 +141,29 @@ class CastingApp(tk.Tk):
         # TITLE
         # =================================================
 
-        title = ttk.Label(
+        ttk.Label(
             main,
             text="Apple TV Cast",
             font=("Arial", 20, "bold")
-        )
-
-        title.pack(
+        ).pack(
             anchor="w"
         )
 
 
-        subtitle = ttk.Label(
+        ttk.Label(
             main,
             text=(
                 "Cast desktop to Apple TV with selectable "
                 "resolution and fine audio synchronization"
             )
-        )
-
-        subtitle.pack(
+        ).pack(
             anchor="w",
             pady=(0, 18)
         )
 
 
         # =================================================
-        # APPLE TV CAST
+        # CAST
         # =================================================
 
         cast_frame = ttk.LabelFrame(
@@ -235,7 +222,7 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # VIDEO RESOLUTION
+        # RESOLUTION
         # =================================================
 
         resolution_frame = ttk.LabelFrame(
@@ -259,51 +246,20 @@ class CastingApp(tk.Tk):
         )
 
 
-        ttk.Radiobutton(
-            resolution_buttons,
-            text="480p",
-            variable=self.resolution,
-            value="480p",
-            command=self.resolution_changed
-        ).pack(
-            side="left"
-        )
+        for index, resolution in enumerate(
+            ["480p", "720p", "1080p", "4K"]
+        ):
 
-
-        ttk.Radiobutton(
-            resolution_buttons,
-            text="720p",
-            variable=self.resolution,
-            value="720p",
-            command=self.resolution_changed
-        ).pack(
-            side="left",
-            padx=(15, 0)
-        )
-
-
-        ttk.Radiobutton(
-            resolution_buttons,
-            text="1080p",
-            variable=self.resolution,
-            value="1080p",
-            command=self.resolution_changed
-        ).pack(
-            side="left",
-            padx=(15, 0)
-        )
-
-
-        ttk.Radiobutton(
-            resolution_buttons,
-            text="4K",
-            variable=self.resolution,
-            value="4K",
-            command=self.resolution_changed
-        ).pack(
-            side="left",
-            padx=(15, 0)
-        )
+            ttk.Radiobutton(
+                resolution_buttons,
+                text=resolution,
+                variable=self.resolution,
+                value=resolution,
+                command=self.resolution_changed
+            ).pack(
+                side="left",
+                padx=(0 if index == 0 else 15, 0)
+            )
 
 
         self.resolution_status = ttk.Label(
@@ -318,7 +274,7 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # AUDIO OUTPUT MODE
+        # AUDIO OUTPUT
         # =================================================
 
         audio_mode_frame = ttk.LabelFrame(
@@ -371,7 +327,7 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # AUDIO SYNC CONTROLS
+        # AUDIO SYNC
         # =================================================
 
         sync_frame = ttk.LabelFrame(
@@ -427,8 +383,8 @@ class CastingApp(tk.Tk):
         self.audio_sync_status = ttk.Label(
             sync_frame,
             text=(
-                "Audio: ~120 ms | "
-                "Fine adjustment: 0 ms"
+                f"Audio: ~{NOMINAL_AUDIO_LATENCY_MS} ms "
+                "| Fine adjustment: 0 ms"
             )
         )
 
@@ -441,7 +397,7 @@ class CastingApp(tk.Tk):
         self.video_sync_status = ttk.Label(
             sync_frame,
             text=(
-                "Video: ~115 ms "
+                f"Video: ~{NOMINAL_VIDEO_LATENCY_MS} ms "
                 "(unchanged by audio adjustment)"
             )
         )
@@ -452,16 +408,15 @@ class CastingApp(tk.Tk):
         )
 
 
-        sync_explanation = ttk.Label(
+        ttk.Label(
             sync_frame,
             text=(
-                "A 40 ms playout margin is retained for stability. "
+                f"A {LATENCY_MARGIN_MS} ms playout margin "
+                "is retained for smoother playback. "
                 "The buttons adjust audio timing only."
             ),
             wraplength=660
-        )
-
-        sync_explanation.pack(
+        ).pack(
             anchor="w",
             pady=(8, 0)
         )
@@ -545,7 +500,7 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # CURRENT COMPUTER AUDIO
+        # COMPUTER AUDIO
         # =================================================
 
         audio_frame = ttk.LabelFrame(
@@ -574,23 +529,23 @@ class CastingApp(tk.Tk):
         # INFO
         # =================================================
 
-        info = ttk.Label(
+        ttk.Label(
             main,
             text=(
                 "\nDefault configuration:\n"
                 "• 480p video\n"
                 "• Apple TV video + audio\n"
+                "• VAAPI hardware encoding\n"
                 "• Automatic AirPlay timing\n"
-                "• 40 ms additional stability margin\n"
-                "• ~115 ms nominal video timing\n"
-                "• ~120 ms nominal audio timing\n"
+                f"• {LATENCY_MARGIN_MS} ms additional stability margin\n"
+                f"• ~{NOMINAL_VIDEO_LATENCY_MS} ms nominal video timing\n"
+                f"• ~{NOMINAL_AUDIO_LATENCY_MS} ms nominal audio timing\n"
                 "• ±5 ms audio-only fine adjustment\n"
-                "• Sleep disabled while casting"
+                "• Sleep disabled while casting\n"
+                "• Screensaver/display blanking disabled while casting"
             ),
             justify="left"
-        )
-
-        info.pack(
+        ).pack(
             anchor="w"
         )
 
@@ -601,10 +556,8 @@ class CastingApp(tk.Tk):
 
     def get_resolution(self):
 
-        selected = self.resolution.get()
-
         return RESOLUTIONS.get(
-            selected,
+            self.resolution.get(),
             RESOLUTIONS["480p"]
         )
 
@@ -653,7 +606,7 @@ class CastingApp(tk.Tk):
 
 
     # =====================================================
-    # AUDIO LATENCY
+    # AUDIO SYNC
     # =====================================================
 
     def get_effective_audio_offset(self):
@@ -674,9 +627,7 @@ class CastingApp(tk.Tk):
 
     def update_audio_sync_status(self):
 
-        adjustment = (
-            self.audio_adjust_ms.get()
-        )
+        adjustment = self.audio_adjust_ms.get()
 
         audio_latency = (
             self.get_nominal_audio_latency()
@@ -684,16 +635,10 @@ class CastingApp(tk.Tk):
 
 
         if adjustment > 0:
-
-            adjustment_text = (
-                f"+{adjustment} ms"
-            )
+            adjustment_text = f"+{adjustment} ms"
 
         else:
-
-            adjustment_text = (
-                f"{adjustment} ms"
-            )
+            adjustment_text = f"{adjustment} ms"
 
 
         self.audio_sync_status.config(
@@ -712,26 +657,11 @@ class CastingApp(tk.Tk):
         )
 
 
-    def adjust_audio(
-        self,
-        delta
-    ):
+    def adjust_audio(self, delta):
 
-        current = (
-            self.audio_adjust_ms.get()
-        )
+        current = self.audio_adjust_ms.get()
 
-        new_value = (
-            current
-            + delta
-        )
-
-
-        # Fine adjustment range:
-        #
-        # -100 ms through +100 ms.
-        #
-        # Buttons still operate in exact 5 ms increments.
+        new_value = current + delta
 
         new_value = max(
             -100,
@@ -761,14 +691,6 @@ class CastingApp(tk.Tk):
             return
 
 
-        # Reset returns to calibrated baseline:
-        #
-        # Fine adjustment = 0
-        #
-        # Effective Doubletake offset = -5 ms
-        #
-        # Nominal audio timing = ~120 ms.
-
         self.audio_adjust_ms.set(
             0
         )
@@ -779,7 +701,86 @@ class CastingApp(tk.Tk):
 
 
     # =====================================================
-    # AUTO-RESTART AFTER A LIVE SETTING CHANGE
+    # SCREEN SAVER / DISPLAY INHIBITION
+    # =====================================================
+
+    def inhibit_screensaver(self):
+
+        if self.screensaver_suspended:
+            return
+
+
+        try:
+
+            self.update_idletasks()
+
+            window_id = str(
+                self.winfo_id()
+            )
+
+
+            result = subprocess.run(
+                [
+                    "xdg-screensaver",
+                    "suspend",
+                    window_id
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False
+            )
+
+
+            if result.returncode == 0:
+
+                self.screensaver_window_id = (
+                    window_id
+                )
+
+                self.screensaver_suspended = True
+
+
+        except Exception:
+
+            # Casting should still work even if the
+            # screensaver command is unavailable.
+
+            self.screensaver_window_id = None
+            self.screensaver_suspended = False
+
+
+    def uninhibit_screensaver(self):
+
+        if not self.screensaver_suspended:
+            return
+
+
+        try:
+
+            if self.screensaver_window_id:
+
+                subprocess.run(
+                    [
+                        "xdg-screensaver",
+                        "resume",
+                        self.screensaver_window_id
+                    ],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False
+                )
+
+
+        except Exception:
+            pass
+
+
+        self.screensaver_window_id = None
+        self.screensaver_suspended = False
+
+
+    # =====================================================
+    # AUTO RESTART
     # =====================================================
 
     def restart_cast_for_setting_change(self):
@@ -810,8 +811,12 @@ class CastingApp(tk.Tk):
             self.restart_job = None
 
 
+        # Keep screensaver inhibited during the brief
+        # automatic restart.
+
         self.stop_cast(
-            cancel_restart=False
+            cancel_restart=False,
+            release_screensaver=False
         )
 
 
@@ -830,10 +835,7 @@ class CastingApp(tk.Tk):
     # COMMAND HELPER
     # =====================================================
 
-    def run_command(
-        self,
-        command
-    ):
+    def run_command(self, command):
 
         return subprocess.run(
             command,
@@ -954,9 +956,7 @@ class CastingApp(tk.Tk):
             return
 
 
-        width, height = (
-            self.get_resolution()
-        )
+        width, height = self.get_resolution()
 
         selected_resolution = (
             self.resolution.get()
@@ -974,31 +974,7 @@ class CastingApp(tk.Tk):
         try:
 
             # -------------------------------------------------
-            # DOUBLETAKE COMMAND
-            #
-            # IMPORTANT AUDIO DESIGN
-            #
-            # We intentionally DO NOT force:
-            #
-            #     -target-latency-ms 120
-            #
-            # because that replaces Doubletake's separate
-            # automatic video/audio timing with one joint
-            # target.
-            #
-            # Instead:
-            #
-            # target-latency-ms = 0
-            #
-            # preserves automatic AirPlay timing.
-            #
-            # latency-margin-ms = 40
-            #
-            # adds extra playout room to both streams.
-            #
-            # audio-offset-ms
-            #
-            # then modifies AUDIO ONLY.
+            # DOUBLETAKE
             # -------------------------------------------------
 
             cast_command = [
@@ -1009,7 +985,7 @@ class CastingApp(tk.Tk):
                 APPLE_TV_IP,
 
                 "-quality",
-                self.resolution.get(),
+                selected_resolution,
 
                 "-hwaccel",
                 "vaapi",
@@ -1017,25 +993,30 @@ class CastingApp(tk.Tk):
                 "-fps",
                 "30",
 
+                # Preserve Doubletake's automatic
+                # separate audio/video timing.
                 "-target-latency-ms",
                 "0",
 
+                # IMPORTANT:
+                # Use the actual configured constant.
+                # This was previously hard-coded to 40.
                 "-latency-margin-ms",
-                "40",
+                str(
+                    LATENCY_MARGIN_MS
+                ),
 
+                # Fine audio-only synchronization.
                 "-audio-offset-ms",
                 str(
-                    self.get_effective_audio_offset()
+                    effective_audio_offset
                 ),
 
                 "-port-range",
                 "60000-60010"
+
             ]
 
-
-            # -------------------------------------------------
-            # BLUETOOTH MODE
-            # -------------------------------------------------
 
             if self.audio_mode.get() == "bluetooth":
 
@@ -1045,7 +1026,7 @@ class CastingApp(tk.Tk):
 
 
             # -------------------------------------------------
-            # PREVENT COMPUTER SLEEP
+            # SYSTEMD IDLE/SLEEP INHIBITOR
             # -------------------------------------------------
 
             command = [
@@ -1064,39 +1045,41 @@ class CastingApp(tk.Tk):
 
 
             # -------------------------------------------------
-            # START CAST
+            # SCREEN SAVER INHIBITOR
+            # -------------------------------------------------
+
+            self.inhibit_screensaver()
+
+
+            # -------------------------------------------------
+            # START
             # -------------------------------------------------
 
             self.cast_process = subprocess.Popen(
-
                 command,
-
                 cwd=os.path.dirname(
                     DOUBLETAKE_PATH
                 ),
-
                 stdout=subprocess.DEVNULL,
-
                 stderr=subprocess.DEVNULL,
-
                 start_new_session=True
             )
 
-
-            # Allow immediate argument/startup errors
-            # to surface.
 
             time.sleep(
                 0.15
             )
 
 
+            # Immediate failure.
             if (
                 self.cast_process.poll()
                 is not None
             ):
 
                 self.cast_process = None
+
+                self.uninhibit_screensaver()
 
                 messagebox.showerror(
                     "Casting Error",
@@ -1111,7 +1094,7 @@ class CastingApp(tk.Tk):
 
 
             # -------------------------------------------------
-            # DISPLAY STATUS
+            # STATUS
             # -------------------------------------------------
 
             adjustment = (
@@ -1120,16 +1103,10 @@ class CastingApp(tk.Tk):
 
 
             if adjustment > 0:
-
-                adjustment_text = (
-                    f"+{adjustment} ms"
-                )
+                adjustment_text = f"+{adjustment} ms"
 
             else:
-
-                adjustment_text = (
-                    f"{adjustment} ms"
-                )
+                adjustment_text = f"{adjustment} ms"
 
 
             if self.audio_mode.get() == "bluetooth":
@@ -1141,6 +1118,7 @@ class CastingApp(tk.Tk):
                     "— Video Only "
                     "| Audio → Bluetooth "
                     f"| Video ~{NOMINAL_VIDEO_LATENCY_MS} ms "
+                    "| Screen Saver Disabled "
                     "| Sleep Disabled"
                 )
 
@@ -1154,6 +1132,7 @@ class CastingApp(tk.Tk):
                     f"| Video ~{NOMINAL_VIDEO_LATENCY_MS} ms "
                     f"| Audio ~{nominal_audio_latency} ms "
                     f"| Fine {adjustment_text} "
+                    "| Screen Saver Disabled "
                     "| Sleep Disabled"
                 )
 
@@ -1168,9 +1147,14 @@ class CastingApp(tk.Tk):
             )
 
 
+            self.start_cast_monitor()
+
+
         except Exception as error:
 
             self.cast_process = None
+
+            self.uninhibit_screensaver()
 
             messagebox.showerror(
                 "Casting Error",
@@ -1178,13 +1162,76 @@ class CastingApp(tk.Tk):
             )
 
 
+    # =====================================================
+    # CAST PROCESS MONITOR
+    # =====================================================
+
+    def start_cast_monitor(self):
+
+        if self.cast_monitor_job is not None:
+
+            try:
+
+                self.after_cancel(
+                    self.cast_monitor_job
+                )
+
+            except Exception:
+                pass
+
+
+        self.cast_monitor_job = self.after(
+            1000,
+            self.monitor_cast_process
+        )
+
+
+    def monitor_cast_process(self):
+
+        self.cast_monitor_job = None
+
+
+        if self.cast_process is None:
+            return
+
+
+        if self.cast_process.poll() is None:
+
+            self.cast_monitor_job = self.after(
+                1000,
+                self.monitor_cast_process
+            )
+
+            return
+
+
+        # Doubletake stopped unexpectedly.
+
+        self.cast_process = None
+
+        self.uninhibit_screensaver()
+
+        self.cast_status.config(
+            text="Casting stopped"
+        )
+
+        self.cast_button.config(
+            state="normal"
+        )
+
+
+    # =====================================================
+    # STOP CAST
+    # =====================================================
+
     def stop_cast(
         self,
-        cancel_restart=True
+        cancel_restart=True,
+        release_screensaver=True
     ):
 
         # -------------------------------------------------
-        # CANCEL PENDING RESTART
+        # CANCEL AUTO RESTART
         # -------------------------------------------------
 
         if (
@@ -1207,7 +1254,26 @@ class CastingApp(tk.Tk):
 
 
         # -------------------------------------------------
-        # STOP DOUBLETAKE / SYSTEMD INHIBITOR
+        # CANCEL PROCESS MONITOR
+        # -------------------------------------------------
+
+        if self.cast_monitor_job is not None:
+
+            try:
+
+                self.after_cancel(
+                    self.cast_monitor_job
+                )
+
+            except Exception:
+                pass
+
+
+            self.cast_monitor_job = None
+
+
+        # -------------------------------------------------
+        # STOP DOUBLETAKE
         # -------------------------------------------------
 
         if self.cast_process:
@@ -1220,11 +1286,9 @@ class CastingApp(tk.Tk):
                 ):
 
                     os.killpg(
-
                         os.getpgid(
                             self.cast_process.pid
                         ),
-
                         signal.SIGTERM
                     )
 
@@ -1233,6 +1297,15 @@ class CastingApp(tk.Tk):
 
 
         self.cast_process = None
+
+
+        # -------------------------------------------------
+        # RESTORE SCREEN SAVER
+        # -------------------------------------------------
+
+        if release_screensaver:
+
+            self.uninhibit_screensaver()
 
 
         self.cast_status.config(
@@ -1256,10 +1329,6 @@ class CastingApp(tk.Tk):
 
         try:
 
-            # -------------------------------------------------
-            # BLUETOOTH SERVICE
-            # -------------------------------------------------
-
             service = self.run_command(
                 [
                     "systemctl",
@@ -1269,10 +1338,7 @@ class CastingApp(tk.Tk):
             )
 
 
-            if (
-                service.stdout.strip()
-                == "active"
-            ):
+            if service.stdout.strip() == "active":
 
                 status_text = (
                     "Bluetooth service: Active"
@@ -1285,10 +1351,6 @@ class CastingApp(tk.Tk):
                 )
 
 
-            # -------------------------------------------------
-            # BLUETOOTH ADAPTER
-            # -------------------------------------------------
-
             controller = self.run_command(
                 [
                     "bluetoothctl",
@@ -1297,10 +1359,7 @@ class CastingApp(tk.Tk):
             )
 
 
-            if (
-                "Powered: yes"
-                in controller.stdout
-            ):
+            if "Powered: yes" in controller.stdout:
 
                 status_text += (
                     " | Adapter: On"
@@ -1318,10 +1377,6 @@ class CastingApp(tk.Tk):
             )
 
 
-            # -------------------------------------------------
-            # PAIRED DEVICES
-            # -------------------------------------------------
-
             devices = self.run_command(
                 [
                     "bluetoothctl",
@@ -1334,17 +1389,12 @@ class CastingApp(tk.Tk):
             labels = []
 
 
-            for line in (
-                devices.stdout
-                .splitlines()
-            ):
+            for line in devices.stdout.splitlines():
 
                 match = re.match(
-
                     r"Device\s+"
                     r"([0-9A-Fa-f:]{17})"
                     r"\s+(.+)",
-
                     line
                 )
 
@@ -1355,7 +1405,6 @@ class CastingApp(tk.Tk):
 
                 mac = match.group(1)
                 name = match.group(2)
-
 
                 label = (
                     name
@@ -1368,7 +1417,6 @@ class CastingApp(tk.Tk):
                 self.bluetooth_devices[
                     label
                 ] = mac
-
 
                 labels.append(
                     label
@@ -1416,7 +1464,6 @@ class CastingApp(tk.Tk):
                 ]
             )
 
-
         except Exception as error:
 
             messagebox.showerror(
@@ -1452,10 +1499,6 @@ class CastingApp(tk.Tk):
         )
 
 
-        # -------------------------------------------------
-        # CONNECT
-        # -------------------------------------------------
-
         result = self.run_command(
             [
                 "bluetoothctl",
@@ -1478,8 +1521,6 @@ class CastingApp(tk.Tk):
                 result.stdout
             )
 
-
-        # Give PipeWire time to expose the new sink.
 
         time.sleep(
             2
@@ -1506,9 +1547,7 @@ class CastingApp(tk.Tk):
             return
 
 
-        # -------------------------------------------------
-        # SET AS DEFAULT OUTPUT
-        # -------------------------------------------------
+        # Set Bluetooth speaker as default sink.
 
         self.run_command(
             [
@@ -1519,9 +1558,7 @@ class CastingApp(tk.Tk):
         )
 
 
-        # -------------------------------------------------
-        # MOVE EXISTING AUDIO STREAMS
-        # -------------------------------------------------
+        # Move currently playing streams.
 
         inputs = self.run_command(
             [
@@ -1533,10 +1570,7 @@ class CastingApp(tk.Tk):
         )
 
 
-        for line in (
-            inputs.stdout
-            .splitlines()
-        ):
+        for line in inputs.stdout.splitlines():
 
             pieces = line.split()
 
@@ -1557,10 +1591,6 @@ class CastingApp(tk.Tk):
                 ]
             )
 
-
-        # -------------------------------------------------
-        # SWITCH APP TO BLUETOOTH MODE
-        # -------------------------------------------------
 
         self.audio_mode.set(
             "bluetooth"
@@ -1597,24 +1627,19 @@ class CastingApp(tk.Tk):
 
 
         mac_pipewire = (
-
             mac
             .replace(
                 ":",
                 "_"
             )
             .lower()
-
         )
 
 
         bluez_sinks = []
 
 
-        for line in (
-            sinks.stdout
-            .splitlines()
-        ):
+        for line in sinks.stdout.splitlines():
 
             pieces = line.split()
 
@@ -1626,32 +1651,21 @@ class CastingApp(tk.Tk):
             name = pieces[1]
 
 
-            if (
-                "bluez"
-                in name.lower()
-            ):
+            if "bluez" in name.lower():
 
                 bluez_sinks.append(
                     name
                 )
 
 
-                if (
-                    mac_pipewire
-                    in name.lower()
-                ):
+                if mac_pipewire in name.lower():
 
                     return name
 
 
-        if (
-            len(bluez_sinks)
-            == 1
-        ):
+        if len(bluez_sinks) == 1:
 
-            return (
-                bluez_sinks[0]
-            )
+            return bluez_sinks[0]
 
 
         return None
@@ -1673,13 +1687,8 @@ class CastingApp(tk.Tk):
             )
 
 
-            sink = (
-                result.stdout.strip()
-            )
-
-
             self.audio_status.config(
-                text=sink
+                text=result.stdout.strip()
             )
 
 
@@ -1712,7 +1721,8 @@ class CastingApp(tk.Tk):
     def destroy(self):
 
         self.stop_cast(
-            cancel_restart=True
+            cancel_restart=True,
+            release_screensaver=True
         )
 
         super().destroy()
