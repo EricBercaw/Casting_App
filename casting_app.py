@@ -53,7 +53,7 @@ RESOLUTIONS = {
 # The UI +/- 5 ms controls adjust AUDIO ONLY around
 # this calibrated baseline.
 
-LATENCY_MARGIN_MS = 55
+LATENCY_MARGIN_MS = 100
 
 BASE_AUDIO_OFFSET_MS = -5
 
