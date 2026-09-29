@@ -54,12 +54,10 @@ RESOLUTIONS = {
 # this calibrated baseline.
 
 LATENCY_MARGIN_MS = 55
-
 BASE_AUDIO_OFFSET_MS = -5
 
-NOMINAL_VIDEO_LATENCY_MS = 115
-NOMINAL_AUDIO_LATENCY_MS = 130
-
+NOMINAL_VIDEO_LATENCY_MS = 130   # 75 + 55
+NOMINAL_AUDIO_LATENCY_MS = 135   # 85 + 55 - 5
 
 # =========================================================
 # MAIN APP
