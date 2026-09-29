@@ -1,14 +1,68 @@
-diff --git a/internal/airplay/mirror.go b/internal/airplay/mirror.go
-index 1784951..3aef000 100644
---- a/internal/airplay/mirror.go
-+++ b/internal/airplay/mirror.go
-@@ -654,7 +654,8 @@ func (c *AirPlayClient) setupMirrorSession(ctx context.Context, cfg StreamConfig
- 			selection.reason = "media-first audio latency was committed before HEVC calibration"
- 		}
- 		videoCodec = selection.codec
--		canvasW, canvasH := selection.width, selection.height
-+		canvasW, canvasH := 854, 480
-+		selection.reason = selection.reason + "; forced default 480p (854x480)"
- 		maxW, maxH := info.MaxVideoSize()
- 		dbg("[SETUP] receiver video canvas: %dx%d (maximum %dx%d, codec=%s, requested=%s: %s)", canvasW, canvasH, maxW, maxH, videoCodec, normalizeVideoCodec(cfg.VideoCodec), selection.reason)
- 		minimumVideoLead := cfg.MeasuredVideoLatency
+diff --git a/cmd/doubletake/main.go b/cmd/doubletake/main.go
+index 75ee223..c4dbe43 100644
+--- a/cmd/doubletake/main.go
++++ b/cmd/doubletake/main.go
+@@ -65,6 +65,8 @@ func main() {
+ 	credBackend := flag.String("cred-backend", "file", "Credential storage backend: file or keyring (system keyring via Secret Service)")
+ 	forcePair := flag.Bool("pair", false, "Force new pairing even if credentials exist")
+ 	fps := flag.Int("fps", 30, "Frames per second")
++	outputWidth := flag.Int("width", 0, "Encoded video width in pixels (0 = receiver-selected canvas)")
++	outputHeight := flag.Int("height", 0, "Encoded video height in pixels (0 = receiver-selected canvas)")
+ 	bitrate := flag.Int("bitrate", 0, "Video bitrate in kbps (0 = auto, default tunes for resolution/FPS)")
+ 	targetLatencyMs := flag.Int("target-latency-ms", 0, "Joint audio/video playout latency override in milliseconds (0 = automatic AirPlay policy)")
+ 	latencyMarginMs := flag.Int("latency-margin-ms", 0, "Extra milliseconds added to automatic audio/video playout targets while preserving their relative offset")
+@@ -85,6 +87,24 @@ func main() {
+ 	noCursor := flag.Bool("no-cursor", false, "Don't show the mouse cursor in the captured video")
+ 	flag.Parse()
+ 
++	if (*outputWidth == 0) != (*outputHeight == 0) {
++		log.Fatal("width and height must either both be zero or both be specified")
++	}
++
++	if *outputWidth < 0 || *outputHeight < 0 {
++		log.Fatal("width and height cannot be negative")
++	}
++
++	if *outputWidth > 0 {
++		if *outputWidth%2 != 0 || *outputHeight%2 != 0 {
++			log.Fatalf(
++				"width and height must be even numbers: %dx%d",
++				*outputWidth,
++				*outputHeight,
++			)
++		}
++	}
++
+ 	forcedWidth, forcedHeight := 0, 0
+ 
+ 	switch *quality {
+@@ -446,6 +466,29 @@ func main() {
+ 	startedCodec := airplay.VideoCodec("")
+ 	var liveVideoLead time.Duration
+ 	prepareVideo := func(width, height int, codec airplay.VideoCodec) (airplay.VideoPreparationResult, error) {
++
++		receiverWidth := width
++		receiverHeight := height
++
++		if *outputWidth > 0 && *outputHeight > 0 {
++			width = *outputWidth
++			height = *outputHeight
++
++			log.Printf(
++				"[RESOLUTION] receiver canvas %dx%d; encoding at %dx%d",
++				receiverWidth,
++				receiverHeight,
++				width,
++				height,
++			)
++		} else {
++			log.Printf(
++				"[RESOLUTION] using receiver canvas %dx%d",
++				width,
++				height,
++			)
++		}
++
+ 		if forcedWidth > 0 {
+ 			if width != forcedWidth || height != forcedHeight {
+ 				log.Printf(
