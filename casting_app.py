@@ -44,8 +44,6 @@ class CastingApp(tk.Tk):
 
         self.cast_process = None
         self.bluetooth_devices = {}
-
-        # Used when settings are changed while casting.
         self.restart_job = None
 
         # -------------------------------------------------
@@ -66,8 +64,7 @@ class CastingApp(tk.Tk):
         # -------------------------------------------------
         # DEFAULT VIDEO RESOLUTION
         #
-        # IMPORTANT:
-        # 480p IS THE DEFAULT SELECTED UI OPTION.
+        # 480p is selected when the app starts.
         # -------------------------------------------------
 
         self.resolution = tk.StringVar(
@@ -77,8 +74,11 @@ class CastingApp(tk.Tk):
         # -------------------------------------------------
         # AUDIO SYNC OFFSET
         #
-        # Positive = audio later
-        # Negative = audio earlier
+        # Base video timing = 120 ms
+        # Base audio timing = 120 ms
+        #
+        # -5 = audio earlier
+        # +5 = audio later
         # -------------------------------------------------
 
         self.audio_offset_ms = tk.IntVar(
@@ -136,7 +136,7 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # APPLE TV CAST SECTION
+        # APPLE TV CAST
         # =================================================
 
         cast_frame = ttk.LabelFrame(
@@ -277,7 +277,7 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # AUDIO OUTPUT MODE
+        # AUDIO OUTPUT
         # =================================================
 
         audio_mode_frame = ttk.LabelFrame(
@@ -330,7 +330,7 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # AUDIO SYNC CONTROLS
+        # AUDIO SYNC
         # =================================================
 
         offset_frame = ttk.Frame(
@@ -383,12 +383,26 @@ class CastingApp(tk.Tk):
 
         self.audio_offset_status = ttk.Label(
             audio_mode_frame,
-            text="Audio offset: 0 ms"
+            text="Audio timing: 120 ms | Offset: 0 ms"
         )
 
         self.audio_offset_status.pack(
             anchor="w",
             pady=(8, 0)
+        )
+
+
+        timing_info = ttk.Label(
+            audio_mode_frame,
+            text=(
+                "Video remains fixed at 120 ms. "
+                "Audio offset adjusts audio only."
+            )
+        )
+
+        timing_info.pack(
+            anchor="w",
+            pady=(5, 0)
         )
 
 
@@ -470,7 +484,7 @@ class CastingApp(tk.Tk):
 
 
         # =================================================
-        # COMPUTER AUDIO STATUS
+        # COMPUTER AUDIO OUTPUT
         # =================================================
 
         audio_frame = ttk.LabelFrame(
@@ -503,9 +517,9 @@ class CastingApp(tk.Tk):
             main,
             text=(
                 "\nDefault: 480p + Apple TV video/audio\n"
-                "Higher resolutions can be selected above.\n"
-                "Changing resolution or audio sync while casting "
-                "automatically restarts the cast.\n"
+                "Video timing: fixed at 120 ms\n"
+                "Audio timing: 120 ms + selected audio offset\n"
+                "Resolution/audio timing changes restart the cast automatically.\n"
                 "Sleep is automatically disabled while casting."
             ),
             justify="left"
@@ -583,29 +597,28 @@ class CastingApp(tk.Tk):
 
         offset = self.audio_offset_ms.get()
 
+        audio_timing = 120 + offset
+
+
         if offset > 0:
 
-            self.audio_offset_status.config(
-                text=(
-                    f"Audio offset: +{offset} ms "
-                    "(audio later)"
-                )
-            )
-
-        elif offset < 0:
-
-            self.audio_offset_status.config(
-                text=(
-                    f"Audio offset: {offset} ms "
-                    "(audio earlier)"
-                )
+            offset_text = (
+                f"+{offset} ms"
             )
 
         else:
 
-            self.audio_offset_status.config(
-                text="Audio offset: 0 ms"
+            offset_text = (
+                f"{offset} ms"
             )
+
+
+        self.audio_offset_status.config(
+            text=(
+                f"Audio timing: {audio_timing} ms "
+                f"| Offset: {offset_text}"
+            )
+        )
 
 
     def adjust_audio_offset(
@@ -617,7 +630,8 @@ class CastingApp(tk.Tk):
 
         new_offset = current + delta
 
-        # Limit adjustment to +/-100 ms.
+        # Limit fine adjustment to +/-100 ms.
+
         new_offset = max(
             -100,
             min(
@@ -626,8 +640,10 @@ class CastingApp(tk.Tk):
             )
         )
 
+
         if new_offset == current:
             return
+
 
         self.audio_offset_ms.set(
             new_offset
@@ -643,6 +659,7 @@ class CastingApp(tk.Tk):
         if self.audio_offset_ms.get() == 0:
             return
 
+
         self.audio_offset_ms.set(
             0
         )
@@ -653,7 +670,7 @@ class CastingApp(tk.Tk):
 
 
     # =====================================================
-    # CAST RESTART AFTER SETTING CHANGE
+    # AUTO-RESTART AFTER SETTINGS CHANGE
     # =====================================================
 
     def restart_cast_for_setting_change(self):
@@ -664,25 +681,26 @@ class CastingApp(tk.Tk):
             self.cast_process.poll() is None
         )
 
+
         if not is_casting:
             return
 
 
-        # Cancel an already scheduled restart.
         if self.restart_job is not None:
 
             try:
+
                 self.after_cancel(
                     self.restart_job
                 )
+
             except Exception:
                 pass
+
 
             self.restart_job = None
 
 
-        # Stop current Doubletake session,
-        # but do not cancel the restart we're about to create.
         self.stop_cast(
             cancel_restart=False
         )
@@ -700,7 +718,7 @@ class CastingApp(tk.Tk):
 
 
     # =====================================================
-    # HELPER
+    # COMMAND HELPER
     # =====================================================
 
     def run_command(
@@ -715,6 +733,10 @@ class CastingApp(tk.Tk):
             stderr=subprocess.STDOUT
         )
 
+
+    # =====================================================
+    # CHECK CUSTOM DOUBLETAKE
+    # =====================================================
 
     def check_doubletake_features(self):
 
@@ -733,12 +755,15 @@ class CastingApp(tk.Tk):
 
             help_text = result.stdout
 
+
         except Exception as error:
 
             messagebox.showerror(
                 "Doubletake",
-                "Could not inspect Doubletake:\n\n"
-                + str(error)
+                (
+                    "Could not inspect Doubletake:\n\n"
+                    + str(error)
+                )
             )
 
             return False
@@ -747,9 +772,10 @@ class CastingApp(tk.Tk):
         required = [
             "-width",
             "-height",
-            "-latency-margin-ms",
-            "-audio-offset-ms"
+            "-audio-offset-ms",
+            "-target-latency-ms"
         ]
+
 
         missing = [
             option
@@ -806,8 +832,10 @@ class CastingApp(tk.Tk):
 
             messagebox.showerror(
                 "Doubletake Missing",
-                "Doubletake was not found at:\n\n"
-                + DOUBLETAKE_PATH
+                (
+                    "Doubletake was not found at:\n\n"
+                    + DOUBLETAKE_PATH
+                )
             )
 
             return
@@ -819,13 +847,39 @@ class CastingApp(tk.Tk):
 
         width, height = self.get_resolution()
 
-        selected_resolution = self.resolution.get()
+        selected_resolution = (
+            self.resolution.get()
+        )
 
 
         try:
 
             # -------------------------------------------------
             # DOUBLETAKE COMMAND
+            #
+            # IMPORTANT TIMING DESIGN:
+            #
+            # target-latency-ms = 120
+            #
+            # This fixes BOTH streams to 120 ms first.
+            #
+            # audio-offset-ms then adjusts ONLY audio.
+            #
+            # Video therefore remains fixed at 120 ms.
+            #
+            # Examples:
+            #
+            # offset  0:
+            #   video = 120
+            #   audio = 120
+            #
+            # offset -5:
+            #   video = 120
+            #   audio = 115
+            #
+            # offset +5:
+            #   video = 120
+            #   audio = 125
             # -------------------------------------------------
 
             cast_command = [
@@ -841,18 +895,12 @@ class CastingApp(tk.Tk):
                 "-fps",
                 "30",
 
-                # Use Doubletake automatic bitrate selection.
                 "-bitrate",
                 "0",
 
-                # -------------------------------------------------
+                # ---------------------------------------------
                 # SELECTED RESOLUTION
-                #
-                # 480p  = 854x480
-                # 720p  = 1280x720
-                # 1080p = 1920x1080
-                # 4K    = 3840x2160
-                # -------------------------------------------------
+                # ---------------------------------------------
 
                 "-width",
                 width,
@@ -860,30 +908,25 @@ class CastingApp(tk.Tk):
                 "-height",
                 height,
 
-                # -------------------------------------------------
-                # LATENCY
-                #
-                # Automatic A/V timing + 40 ms stability margin.
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # FIXED VIDEO/AUDIO BASE TIMING
+                # ---------------------------------------------
 
                 "-target-latency-ms",
-                "0",
+                "120",
 
-                "-latency-margin-ms",
-                "40",
-
-                # -------------------------------------------------
-                # AUDIO-ONLY FINE SYNC OFFSET
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # AUDIO-ONLY FINE ADJUSTMENT
+                # ---------------------------------------------
 
                 "-audio-offset-ms",
                 str(
                     self.audio_offset_ms.get()
                 ),
 
-                # -------------------------------------------------
-                # FIXED UDP PORT RANGE
-                # -------------------------------------------------
+                # ---------------------------------------------
+                # NETWORK PORT RANGE
+                # ---------------------------------------------
 
                 "-port-range",
                 "60000-60010"
@@ -893,8 +936,6 @@ class CastingApp(tk.Tk):
 
             # -------------------------------------------------
             # BLUETOOTH MODE
-            #
-            # Apple TV receives video only.
             # -------------------------------------------------
 
             if self.audio_mode.get() == "bluetooth":
@@ -943,8 +984,9 @@ class CastingApp(tk.Tk):
             )
 
 
-            # Give it a moment to fail immediately if
-            # command-line options are invalid.
+            # Give Doubletake a moment to fail if one
+            # of the command-line arguments is invalid.
+
             time.sleep(
                 0.15
             )
@@ -958,8 +1000,8 @@ class CastingApp(tk.Tk):
                     "Casting Error",
                     (
                         "Doubletake exited immediately.\n\n"
-                        "Check that the selected resolution "
-                        "is supported by your custom build."
+                        "Check the custom Doubletake build "
+                        "and selected resolution."
                     )
                 )
 
@@ -967,15 +1009,29 @@ class CastingApp(tk.Tk):
 
 
             # -------------------------------------------------
-            # UPDATE UI STATUS
+            # STATUS
             # -------------------------------------------------
 
-            offset = self.audio_offset_ms.get()
+            offset = (
+                self.audio_offset_ms.get()
+            )
+
+            audio_timing = (
+                120 + offset
+            )
+
 
             if offset > 0:
-                offset_text = f"+{offset} ms"
+
+                offset_text = (
+                    f"+{offset} ms"
+                )
+
             else:
-                offset_text = f"{offset} ms"
+
+                offset_text = (
+                    f"{offset} ms"
+                )
 
 
             if self.audio_mode.get() == "bluetooth":
@@ -986,6 +1042,7 @@ class CastingApp(tk.Tk):
                     f"({width}×{height}) "
                     "— Video Only "
                     "| Audio → Bluetooth "
+                    "| Video 120 ms "
                     "| Sleep Disabled"
                 )
 
@@ -996,7 +1053,9 @@ class CastingApp(tk.Tk):
                     f"— {selected_resolution} "
                     f"({width}×{height}) "
                     "— Video + Audio "
-                    f"| Audio Offset {offset_text} "
+                    "| Video 120 ms "
+                    f"| Audio {audio_timing} ms "
+                    f"({offset_text}) "
                     "| Sleep Disabled"
                 )
 
@@ -1027,7 +1086,7 @@ class CastingApp(tk.Tk):
     ):
 
         # -------------------------------------------------
-        # CANCEL PENDING AUTO-RESTART
+        # CANCEL PENDING RESTART
         # -------------------------------------------------
 
         if (
@@ -1045,11 +1104,12 @@ class CastingApp(tk.Tk):
             except Exception:
                 pass
 
+
             self.restart_job = None
 
 
         # -------------------------------------------------
-        # STOP CAST
+        # STOP DOUBLETAKE
         # -------------------------------------------------
 
         if self.cast_process:
@@ -1098,10 +1158,6 @@ class CastingApp(tk.Tk):
 
         try:
 
-            # -------------------------------------------------
-            # BLUETOOTH SERVICE
-            # -------------------------------------------------
-
             service = self.run_command(
                 [
                     "systemctl",
@@ -1126,10 +1182,6 @@ class CastingApp(tk.Tk):
                     "Bluetooth service: Inactive"
                 )
 
-
-            # -------------------------------------------------
-            # BLUETOOTH ADAPTER
-            # -------------------------------------------------
 
             controller = self.run_command(
                 [
@@ -1159,10 +1211,6 @@ class CastingApp(tk.Tk):
                 text=status_text
             )
 
-
-            # -------------------------------------------------
-            # PAIRED DEVICES
-            # -------------------------------------------------
 
             devices = self.run_command(
                 [
@@ -1258,6 +1306,7 @@ class CastingApp(tk.Tk):
                 ]
             )
 
+
         except Exception as error:
 
             messagebox.showerror(
@@ -1294,7 +1343,7 @@ class CastingApp(tk.Tk):
 
 
         # -------------------------------------------------
-        # CONNECT DEVICE
+        # CONNECT BLUETOOTH
         # -------------------------------------------------
 
         result = self.run_command(
@@ -1320,7 +1369,7 @@ class CastingApp(tk.Tk):
             )
 
 
-        # Give PipeWire time to create the sink.
+        # Give PipeWire time to create sink.
 
         time.sleep(
             2
@@ -1348,7 +1397,7 @@ class CastingApp(tk.Tk):
 
 
         # -------------------------------------------------
-        # SET BLUETOOTH AS DEFAULT OUTPUT
+        # SET DEFAULT AUDIO OUTPUT
         # -------------------------------------------------
 
         self.run_command(
@@ -1381,8 +1430,10 @@ class CastingApp(tk.Tk):
 
             pieces = line.split()
 
+
             if not pieces:
                 continue
+
 
             input_id = pieces[0]
 
@@ -1398,7 +1449,7 @@ class CastingApp(tk.Tk):
 
 
         # -------------------------------------------------
-        # SWITCH APP TO BLUETOOTH CAST MODE
+        # SWITCH TO BLUETOOTH MODE
         # -------------------------------------------------
 
         self.audio_mode.set(
