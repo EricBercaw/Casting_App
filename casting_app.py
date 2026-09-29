@@ -680,6 +680,9 @@ class CastingApp(tk.Tk):
                 "-bitrate",
                 "0",
 
+                "-video-codec",
+                "h264",
+
                 # Use Doubletake's automatic A/V timing policy.
                 "-target-latency-ms",
                 "0",

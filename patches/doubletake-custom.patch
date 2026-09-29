@@ -1,0 +1,14 @@
+diff --git a/internal/airplay/mirror.go b/internal/airplay/mirror.go
+index 1784951..3aef000 100644
+--- a/internal/airplay/mirror.go
++++ b/internal/airplay/mirror.go
+@@ -654,7 +654,8 @@ func (c *AirPlayClient) setupMirrorSession(ctx context.Context, cfg StreamConfig
+ 			selection.reason = "media-first audio latency was committed before HEVC calibration"
+ 		}
+ 		videoCodec = selection.codec
+-		canvasW, canvasH := selection.width, selection.height
++		canvasW, canvasH := 854, 480
++		selection.reason = selection.reason + "; forced default 480p (854x480)"
+ 		maxW, maxH := info.MaxVideoSize()
+ 		dbg("[SETUP] receiver video canvas: %dx%d (maximum %dx%d, codec=%s, requested=%s: %s)", canvasW, canvasH, maxW, maxH, videoCodec, normalizeVideoCodec(cfg.VideoCodec), selection.reason)
+ 		minimumVideoLead := cfg.MeasuredVideoLatency
