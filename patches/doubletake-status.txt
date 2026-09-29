@@ -1,0 +1,8 @@
+?? cmd/doubletake/main.go.before-custom-margin
+?? cmd/doubletake/main.go.before-margin
+?? cmd/doubletake/main.go.before-quality-selector
+?? internal/airplay/capture.go.before-legacy-vaapi
+?? internal/airplay/capture_test.go.before-legacy-vaapi
+?? internal/airplay/capture_test.go.before-unused-probe-fix
+?? internal/airplay/latency.go.before-custom-margin
+?? internal/airplay/latency.go.before-margin

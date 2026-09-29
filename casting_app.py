@@ -880,8 +880,7 @@ class CastingApp(tk.Tk):
 
 
         required = [
-            "-width",
-            "-height",
+            "-quality",
             "-target-latency-ms",
             "-latency-margin-ms",
             "-audio-offset-ms"
@@ -1010,62 +1009,28 @@ class CastingApp(tk.Tk):
                 "-target",
                 APPLE_TV_IP,
 
+                "-quality",
+                self.resolution.get(),
+
                 "-hwaccel",
-                "auto",
+                "vaapi",
 
                 "-fps",
                 "30",
 
-                "-bitrate",
-                "0",
-
-                # ---------------------------------------------
-                # SELECTED RESOLUTION
-                # ---------------------------------------------
-
-                "-width",
-                width,
-
-                "-height",
-                height,
-
-                # ---------------------------------------------
-                # AUTOMATIC AIRPLAY LATENCY POLICY
-                # ---------------------------------------------
-
                 "-target-latency-ms",
                 "0",
 
-                # ---------------------------------------------
-                # ADDITIONAL STABILITY BUFFER
-                # ---------------------------------------------
-
                 "-latency-margin-ms",
-                str(
-                    LATENCY_MARGIN_MS
-                ),
-
-                # ---------------------------------------------
-                # AUDIO-ONLY SYNC OFFSET
-                #
-                # Baseline = -5 ms
-                #
-                # User controls add +/-5 ms increments
-                # on top of that baseline.
-                # ---------------------------------------------
+                "40",
 
                 "-audio-offset-ms",
                 str(
-                    effective_audio_offset
+                    self.get_effective_audio_offset()
                 ),
-
-                # ---------------------------------------------
-                # FIXED LOCAL UDP RANGE
-                # ---------------------------------------------
 
                 "-port-range",
                 "60000-60010"
-
             ]
 
 

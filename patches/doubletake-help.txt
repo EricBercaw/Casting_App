@@ -1,0 +1,51 @@
+Usage of ./bin/doubletake:
+  -audio-offset-ms int
+    	Signed audio-only synchronization offset in milliseconds; positive delays audio, negative advances audio
+  -bitrate int
+    	Video bitrate in kbps (0 = auto, default tunes for resolution/FPS)
+  -code string
+    	Pairing PIN shown on the receiver, or the password set on it when "Require Password" is enabled; prefer $DOUBLETAKE_CODE so it stays out of shell history and ps output
+  -cred-backend string
+    	Credential storage backend: file or keyring (system keyring via Secret Service) (default "file")
+  -creds string
+    	Path to saved pairing credentials (default "/home/ericb/.config/doubletake/credentials.json")
+  -daemonize
+    	Run as background daemon with Unix socket control interface
+  -debug
+    	Enable verbose debug logging
+  -direct-key
+    	Use shk/shiv directly without SHA-512 derivation
+  -fps int
+    	Frames per second (default 30)
+  -hwaccel string
+    	Encoder: auto, nvenc, vaapi, openh264, none (x264/x265) (default "auto")
+  -latency-margin-ms int
+    	Extra milliseconds added to automatic audio/video playout targets while preserving their relative offset
+  -no-audio
+    	Disable audio streaming
+  -no-cursor
+    	Don't show the mouse cursor in the captured video
+  -no-encrypt
+    	Disable RTSP header encryption (debugging only; video frames are always encrypted)
+  -pair
+    	Force new pairing even if credentials exist
+  -port int
+    	AirPlay port (default 7000)
+  -port-range string
+    	Local UDP port range for receiver timing/audio (e.g. "60000-60010"); empty = OS ephemeral. Needs at least 3 ports.
+  -quality string
+    	Casting quality: auto, 480p, 720p, 1080p, or 4k (default "720p")
+  -socket string
+    	Unix socket path for daemon control interface (default "/run/user/1000/doubletake.sock")
+  -target string
+    	Apple TV IP address or hostname (skip discovery)
+  -target-latency-ms int
+    	Joint audio/video playout latency override in milliseconds (0 = automatic AirPlay policy)
+  -test
+    	Use synthetic video (videotestsrc) instead of screen capture for debugging
+  -video-codec string
+    	Screen codec: auto, h264, or hevc (auto uses capability-gated hardware HEVC for high-resolution receivers) (default "auto")
+  -x11-window-id string
+    	X11 window id to capture, decimal or 0xhex
+  -x11-window-name string
+    	X11 window name to capture; prefer -x11-window-id
