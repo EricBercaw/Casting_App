@@ -53,11 +53,12 @@ RESOLUTIONS = {
 # The UI +/- 5 ms controls adjust AUDIO ONLY around
 # this calibrated baseline.
 
-LATENCY_MARGIN_MS = 55
+LATENCY_MARGIN_MS = 90
+
 BASE_AUDIO_OFFSET_MS = -5
 
-NOMINAL_VIDEO_LATENCY_MS = 130   # 75 + 55
-NOMINAL_AUDIO_LATENCY_MS = 135   # 85 + 55 - 5
+NOMINAL_VIDEO_LATENCY_MS = 165
+NOMINAL_AUDIO_LATENCY_MS = 170
 
 # =========================================================
 # MAIN APP
