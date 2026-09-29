@@ -677,6 +677,12 @@ class CastingApp(tk.Tk):
                 "-fps",
                 "30",
 
+                "-width",
+                "854",
+
+                "-height",
+                "480",
+
                 "-bitrate",
                 "0",
 
