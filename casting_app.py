@@ -52,6 +52,14 @@ RESOLUTIONS = {
 
 LATENCY_MARGIN_MS = 90
 
+# Bluetooth audio is deliberately delayed to match the Apple TV video path.
+BASE_BLUETOOTH_AUDIO_DELAY_MS = 190
+AUDIO_DELAY_ADJUST_MIN_MS = -50
+AUDIO_DELAY_ADJUST_MAX_MS = 50
+AUDIO_DELAY_STEP_MS = 5
+DELAY_SINK_NAME = "bt_delay"
+DELAY_SINK_DESCRIPTION = "Living Room Audio (Synced)"
+
 
 
 
@@ -66,7 +74,7 @@ class CastingApp(tk.Tk):
 
         self.title("Apple TV Cast")
 
-        self.geometry("740x700")
+        self.geometry("740x820")
 
         self.resizable(True, True)
 
@@ -83,6 +91,10 @@ class CastingApp(tk.Tk):
         self.bluetooth_monitor_job = None
         self.bluetooth_was_connected = False
         self.bluetooth_routed_sink = None
+        self.audio_delay_null_module_id = None
+        self.audio_delay_loopback_module_id = None
+        self.audio_delay_physical_sink = None
+        self.audio_delay_job = None
 
 
 
@@ -93,6 +105,7 @@ class CastingApp(tk.Tk):
 
 
         self.resolution = tk.StringVar(value="720p")
+        self.audio_delay_adjustment = tk.IntVar(value=0)
 
 
 
@@ -375,6 +388,96 @@ class CastingApp(tk.Tk):
 
         # -------------------------------------------------
 
+        # BLUETOOTH AUDIO SYNC
+
+        # -------------------------------------------------
+
+        sync_frame = ttk.LabelFrame(
+
+            main,
+
+            text="Bluetooth Audio Sync",
+
+            padding=12,
+
+        )
+
+        sync_frame.pack(fill="x", pady=(18, 0))
+
+
+
+        ttk.Label(
+
+            sync_frame,
+
+            text=(
+
+                "Base delay is 190 ms. Use the slider to fine-tune Bluetooth "
+
+                "audio from -50 ms to +50 ms without changing the video cast."
+
+            ),
+
+            wraplength=660,
+
+        ).pack(anchor="w")
+
+
+
+        slider_row = ttk.Frame(sync_frame)
+
+        slider_row.pack(fill="x", pady=(8, 0))
+
+
+
+        ttk.Label(slider_row, text="-50 ms").pack(side="left")
+
+
+
+        self.audio_delay_scale = tk.Scale(
+
+            slider_row,
+
+            from_=AUDIO_DELAY_ADJUST_MIN_MS,
+
+            to=AUDIO_DELAY_ADJUST_MAX_MS,
+
+            resolution=AUDIO_DELAY_STEP_MS,
+
+            orient="horizontal",
+
+            showvalue=False,
+
+            variable=self.audio_delay_adjustment,
+
+            command=self.audio_delay_changed,
+
+            length=480,
+
+        )
+
+        self.audio_delay_scale.pack(side="left", fill="x", expand=True, padx=10)
+
+
+
+        ttk.Label(slider_row, text="+50 ms").pack(side="left")
+
+
+
+        self.audio_delay_status = ttk.Label(
+
+            sync_frame,
+
+            text="Fine tune: +0 ms | Total Bluetooth audio delay: 190 ms",
+
+        )
+
+        self.audio_delay_status.pack(anchor="w", pady=(8, 0))
+
+
+
+        # -------------------------------------------------
+
         # CURRENT AUDIO OUTPUT
 
         # -------------------------------------------------
@@ -431,6 +534,8 @@ class CastingApp(tk.Tk):
 
                 f"• {LATENCY_MARGIN_MS} ms video stability margin\n"
 
+                f"• Bluetooth audio delay: {BASE_BLUETOOTH_AUDIO_DELAY_MS} ms base "
+                "with ±50 ms fine tuning\n"
                 "• No AirPlay audio offset or periodic audio refresh\n"
 
                 "• Sleep and screensaver disabled while casting"
@@ -468,6 +573,98 @@ class CastingApp(tk.Tk):
             check=False,
 
         )
+
+
+
+    def get_total_audio_delay_ms(self):
+
+        return max(
+
+            0,
+
+            BASE_BLUETOOTH_AUDIO_DELAY_MS + self.audio_delay_adjustment.get(),
+
+        )
+
+
+
+    def update_audio_delay_status(self):
+
+        adjustment = self.audio_delay_adjustment.get()
+
+        total = self.get_total_audio_delay_ms()
+
+        sign = "+" if adjustment >= 0 else ""
+
+        self.audio_delay_status.config(
+
+            text=(
+
+                f"Fine tune: {sign}{adjustment} ms | "
+
+                f"Total Bluetooth audio delay: {total} ms"
+
+            )
+
+        )
+
+
+
+    def audio_delay_changed(self, _value=None):
+
+        self.update_audio_delay_status()
+
+
+
+        if self.audio_delay_job is not None:
+
+            try:
+
+                self.after_cancel(self.audio_delay_job)
+
+            except Exception:
+
+                pass
+
+
+
+        # Debounce slider movement so we do not continuously reload the
+
+        # loopback module while the user is dragging the control.
+
+        self.audio_delay_job = self.after(300, self.apply_audio_delay_change)
+
+
+
+    def apply_audio_delay_change(self):
+
+        self.audio_delay_job = None
+
+        mac = self.get_target_bluetooth_mac()
+
+
+
+        if not mac or not self.is_bluetooth_connected(mac):
+
+            return
+
+
+
+        sink = self.find_bluetooth_sink(mac)
+
+        if not sink:
+
+            return
+
+
+
+        self.ensure_audio_delay_path(sink, recreate_loopback=True)
+
+        self.run_command(["pactl", "set-default-sink", DELAY_SINK_NAME])
+
+        self.move_application_audio_to_sink(DELAY_SINK_NAME)
+
+        self.refresh_audio()
 
 
 
@@ -1293,14 +1490,431 @@ class CastingApp(tk.Tk):
 
 
 
+    def get_sink_index(self, sink_name):
+
+        try:
+
+            sinks = self.run_command(["pactl", "list", "short", "sinks"])
+
+            for line in sinks.stdout.splitlines():
+
+                pieces = line.split()
+
+                if len(pieces) >= 2 and pieces[1] == sink_name:
+
+                    return pieces[0]
+
+        except Exception:
+
+            pass
+
+
+
+        return None
+
+
+
+    def get_sink_inputs(self):
+
+        """Return sink-input id, sink index and owner module when available."""
+
+        result = self.run_command(["pactl", "list", "sink-inputs"])
+
+        items = []
+
+        current = None
+
+
+
+        for raw_line in result.stdout.splitlines():
+
+            line = raw_line.strip()
+
+            match = re.match(r"Sink Input #(\d+)", line)
+
+            if match:
+
+                if current is not None:
+
+                    items.append(current)
+
+                current = {
+
+                    "id": match.group(1),
+
+                    "sink": None,
+
+                    "owner_module": None,
+
+                }
+
+                continue
+
+
+
+            if current is None:
+
+                continue
+
+
+
+            if line.startswith("Owner Module:"):
+
+                current["owner_module"] = line.split(":", 1)[1].strip()
+
+            elif line.startswith("Sink:"):
+
+                current["sink"] = line.split(":", 1)[1].strip()
+
+
+
+        if current is not None:
+
+            items.append(current)
+
+
+
+        return items
+
+
+
+    def move_application_audio_to_sink(self, target_sink):
+
+        target_index = self.get_sink_index(target_sink)
+
+        if target_index is None:
+
+            return
+
+
+
+        loopback_owner = (
+
+            str(self.audio_delay_loopback_module_id)
+
+            if self.audio_delay_loopback_module_id is not None
+
+            else None
+
+        )
+
+
+
+        for item in self.get_sink_inputs():
+
+            # Never move our own bt_delay -> Bluetooth loopback stream.
+
+            if loopback_owner and item.get("owner_module") == loopback_owner:
+
+                continue
+
+
+
+            if item.get("sink") == str(target_index):
+
+                continue
+
+
+
+            self.run_command(
+
+                ["pactl", "move-sink-input", item["id"], target_sink]
+
+            )
+
+
+
+    def unload_module(self, module_id):
+
+        if module_id is None:
+
+            return
+
+
+
+        try:
+
+            self.run_command(["pactl", "unload-module", str(module_id)])
+
+        except Exception:
+
+            pass
+
+
+
+    def remove_stale_audio_delay_modules(self):
+
+        """Remove bt_delay modules left over from an earlier app/test run."""
+
+        try:
+
+            modules = self.run_command(["pactl", "list", "short", "modules"])
+
+            loopbacks = []
+
+            null_sinks = []
+
+
+
+            for line in modules.stdout.splitlines():
+
+                pieces = line.split(None, 2)
+
+                if len(pieces) < 2:
+
+                    continue
+
+
+
+                module_id = pieces[0]
+
+                module_name = pieces[1]
+
+                arguments = pieces[2] if len(pieces) >= 3 else ""
+
+
+
+                if (
+
+                    module_name == "module-loopback"
+
+                    and f"source={DELAY_SINK_NAME}.monitor" in arguments
+
+                ):
+
+                    loopbacks.append(module_id)
+
+                elif (
+
+                    module_name == "module-null-sink"
+
+                    and f"sink_name={DELAY_SINK_NAME}" in arguments
+
+                ):
+
+                    null_sinks.append(module_id)
+
+
+
+            for module_id in loopbacks:
+
+                self.unload_module(module_id)
+
+
+
+            for module_id in null_sinks:
+
+                self.unload_module(module_id)
+
+        except Exception:
+
+            pass
+
+
+
+        self.audio_delay_loopback_module_id = None
+
+        self.audio_delay_null_module_id = None
+
+        self.audio_delay_physical_sink = None
+
+
+
+    def ensure_audio_delay_path(self, physical_sink, recreate_loopback=False):
+
+        if not physical_sink:
+
+            return False
+
+
+
+        delay_sink_exists = self.get_sink_index(DELAY_SINK_NAME) is not None
+
+
+
+        if (
+
+            not delay_sink_exists
+
+            or self.audio_delay_null_module_id is None
+
+            or self.audio_delay_physical_sink != physical_sink
+
+        ):
+
+            self.remove_stale_audio_delay_modules()
+
+
+
+            null_result = self.run_command(
+
+                [
+
+                    "pactl",
+
+                    "load-module",
+
+                    "module-null-sink",
+
+                    f"sink_name={DELAY_SINK_NAME}",
+
+                    f"sink_properties=device.description={DELAY_SINK_DESCRIPTION.replace(' ', '_')}",
+
+                ]
+
+            )
+
+
+
+            if null_result.returncode != 0 or not null_result.stdout.strip():
+
+                return False
+
+
+
+            self.audio_delay_null_module_id = null_result.stdout.strip()
+
+            self.audio_delay_physical_sink = physical_sink
+
+            recreate_loopback = True
+
+
+
+        if recreate_loopback or self.audio_delay_loopback_module_id is None:
+
+            self.unload_module(self.audio_delay_loopback_module_id)
+
+            self.audio_delay_loopback_module_id = None
+
+
+
+            total_delay = self.get_total_audio_delay_ms()
+
+            loop_result = self.run_command(
+
+                [
+
+                    "pactl",
+
+                    "load-module",
+
+                    "module-loopback",
+
+                    f"source={DELAY_SINK_NAME}.monitor",
+
+                    f"sink={physical_sink}",
+
+                    f"latency_msec={total_delay}",
+
+                    "source_dont_move=true",
+
+                    "sink_dont_move=true",
+
+                ]
+
+            )
+
+
+
+            if loop_result.returncode != 0 or not loop_result.stdout.strip():
+
+                return False
+
+
+
+            self.audio_delay_loopback_module_id = loop_result.stdout.strip()
+
+
+
+        return True
+
+
+
+    def choose_fallback_sink(self):
+
+        try:
+
+            sinks = self.run_command(["pactl", "list", "short", "sinks"])
+
+            candidates = []
+
+
+
+            for line in sinks.stdout.splitlines():
+
+                pieces = line.split()
+
+                if len(pieces) < 2:
+
+                    continue
+
+
+
+                sink = pieces[1]
+
+                if sink == DELAY_SINK_NAME:
+
+                    continue
+
+                if "bluez" in sink.lower():
+
+                    continue
+
+                candidates.append(sink)
+
+
+
+            return candidates[0] if candidates else None
+
+        except Exception:
+
+            return None
+
+
+
+    def cleanup_audio_delay_path(self, restore_sink=None):
+
+        if restore_sink is None:
+
+            restore_sink = self.choose_fallback_sink()
+
+
+
+        if restore_sink and self.get_sink_index(restore_sink) is not None:
+
+            self.run_command(["pactl", "set-default-sink", restore_sink])
+
+            self.move_application_audio_to_sink(restore_sink)
+
+
+
+        self.unload_module(self.audio_delay_loopback_module_id)
+
+        self.audio_delay_loopback_module_id = None
+
+
+
+        self.unload_module(self.audio_delay_null_module_id)
+
+        self.audio_delay_null_module_id = None
+
+        self.audio_delay_physical_sink = None
+
+
+
     def route_audio_to_bluetooth(
+
         self,
+
         mac,
+
         wait_for_sink=False,
+
         initialize_volume=False,
+
     ):
 
-        sink = None
+        physical_sink = None
 
         attempts = 10 if wait_for_sink else 1
 
@@ -1308,9 +1922,9 @@ class CastingApp(tk.Tk):
 
         for attempt in range(attempts):
 
-            sink = self.find_bluetooth_sink(mac)
+            physical_sink = self.find_bluetooth_sink(mac)
 
-            if sink:
+            if physical_sink:
 
                 break
 
@@ -1320,52 +1934,43 @@ class CastingApp(tk.Tk):
 
 
 
-        if not sink:
+        if not physical_sink:
 
             return None
 
 
 
-        # Make Living Room Audio the default for new audio streams.
+        # The real Bluetooth sink stays unmuted, but applications play into
 
-        self.run_command(["pactl", "set-default-sink", sink])
+        # bt_delay. bt_delay.monitor is then looped to Bluetooth with the
 
-        self.run_command(["pactl", "set-sink-mute", sink, "0"])
+        # requested latency.
 
-        # Match the known-good terminal setup on the first route for each
-        # connection, but do not keep overriding the user's volume afterward.
+        self.run_command(["pactl", "set-sink-mute", physical_sink, "0"])
+
+
+
         if initialize_volume:
-            self.run_command(["pactl", "set-sink-volume", sink, "80%"])
 
-        # Move anything that was already playing when Bluetooth connected.
-
-        inputs = self.run_command(
-
-            ["pactl", "list", "short", "sink-inputs"]
-
-        )
+            self.run_command(["pactl", "set-sink-volume", physical_sink, "80%"])
 
 
 
-        for line in inputs.stdout.splitlines():
+        if not self.ensure_audio_delay_path(physical_sink):
 
-            pieces = line.split()
+            return None
 
-            if not pieces:
 
-                continue
 
-            self.run_command(
+        self.run_command(["pactl", "set-default-sink", DELAY_SINK_NAME])
 
-                ["pactl", "move-sink-input", pieces[0], sink]
-
-            )
+        self.move_application_audio_to_sink(DELAY_SINK_NAME)
 
 
 
         self.refresh_audio()
 
-        return sink
+        return physical_sink
 
 
 
@@ -1430,7 +2035,7 @@ class CastingApp(tk.Tk):
                         self.bluetooth_status.config(
                             text=(
                                 f"{TARGET_BLUETOOTH_NAME}: Connected | "
-                                "Audio routing: Automatic"
+                                f"Audio routing: Automatic | Delay: {self.get_total_audio_delay_ms()} ms"
                             )
                         )
                     else:
@@ -1456,8 +2061,9 @@ class CastingApp(tk.Tk):
                 # again on the next connection.
                 self.bluetooth_routed_sink = None
                 if self.bluetooth_was_connected:
-                    # The receiver was disconnected. Do not force another
-                    # output; PipeWire can fall back to the local device.
+                    # Remove the delayed virtual sink so PipeWire can fall
+                    # back to a normal local output after Bluetooth disconnects.
+                    self.cleanup_audio_delay_path()
                     self.refresh_bluetooth()
 
 
@@ -1693,6 +2299,8 @@ class CastingApp(tk.Tk):
             text=f"Selected: {selected} ({width}x{height})"
         )
 
+        self.update_audio_delay_status()
+
         self.refresh_bluetooth()
 
         self.refresh_audio()
@@ -1715,6 +2323,38 @@ class CastingApp(tk.Tk):
 
 
 
+        if self.audio_delay_job is not None:
+
+            try:
+
+                self.after_cancel(self.audio_delay_job)
+
+            except Exception:
+
+                pass
+
+            self.audio_delay_job = None
+
+
+
+        # Preserve ordinary Bluetooth audio when the app closes: remove the
+
+        # sync buffer and return application audio to the physical BT sink.
+
+        restore_sink = None
+
+        mac = self.get_target_bluetooth_mac()
+
+        if mac and self.is_bluetooth_connected(mac):
+
+            restore_sink = self.find_bluetooth_sink(mac)
+
+
+
+        self.cleanup_audio_delay_path(restore_sink=restore_sink)
+
+
+
         self.stop_cast(
 
             cancel_restart=True,
@@ -1724,7 +2364,6 @@ class CastingApp(tk.Tk):
         )
 
         super().destroy()
-
 
 
 
