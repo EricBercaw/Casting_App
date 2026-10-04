@@ -956,6 +956,7 @@ class CastingApp(tk.Tk):
 
     def stop_cast(self, cancel_restart=True, release_screensaver=True):
 
+        # Cancel any delayed restart before touching the running process.
         if cancel_restart and self.restart_job is not None:
 
             try:
@@ -990,19 +991,22 @@ class CastingApp(tk.Tk):
 
 
 
+        # First stop the process group started by this app.
         if process is not None and process.poll() is None:
 
             try:
 
                 os.killpg(os.getpgid(process.pid), signal.SIGTERM)
 
-                process.wait(timeout=3)
+                process.wait(timeout=2)
 
             except subprocess.TimeoutExpired:
 
                 try:
 
                     os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+
+                    process.wait(timeout=1)
 
                 except Exception:
 
@@ -1017,6 +1021,50 @@ class CastingApp(tk.Tk):
                 except Exception:
 
                     pass
+
+
+
+        # systemd-inhibit can occasionally leave the DoubleTake child alive.
+        # Kill any remaining instance of this exact custom DoubleTake binary.
+        try:
+
+            leftovers = self.run_command(["pgrep", "-f", DOUBLETAKE_PATH])
+
+            for line in leftovers.stdout.splitlines():
+
+                try:
+
+                    pid = int(line.strip())
+
+                    if pid != os.getpid():
+
+                        os.kill(pid, signal.SIGTERM)
+
+                except (ValueError, ProcessLookupError, PermissionError):
+
+                    pass
+
+            time.sleep(0.15)
+
+            leftovers = self.run_command(["pgrep", "-f", DOUBLETAKE_PATH])
+
+            for line in leftovers.stdout.splitlines():
+
+                try:
+
+                    pid = int(line.strip())
+
+                    if pid != os.getpid():
+
+                        os.kill(pid, signal.SIGKILL)
+
+                except (ValueError, ProcessLookupError, PermissionError):
+
+                    pass
+
+        except Exception:
+
+            pass
 
 
 
@@ -1634,7 +1682,13 @@ class CastingApp(tk.Tk):
 
     def refresh_all(self):
 
-        self.resolution_changed()
+        # Refresh UI state without treating it as a user resolution change.
+        # Calling resolution_changed() here can restart an active cast.
+        selected = self.resolution.get()
+        width, height = self.get_resolution()
+        self.resolution_status.config(
+            text=f"Selected: {selected} ({width}x{height})"
+        )
 
         self.refresh_bluetooth()
 
