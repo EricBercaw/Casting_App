@@ -53,7 +53,7 @@ RESOLUTIONS = {
 LATENCY_MARGIN_MS = 90
 
 # Bluetooth audio is deliberately delayed to match the Apple TV video path.
-BASE_BLUETOOTH_AUDIO_DELAY_MS = 190
+BASE_BLUETOOTH_AUDIO_DELAY_MS = 185
 AUDIO_DELAY_ADJUST_MIN_MS = -50
 AUDIO_DELAY_ADJUST_MAX_MS = 50
 AUDIO_DELAY_STEP_MS = 5
@@ -890,7 +890,7 @@ class CastingApp(tk.Tk):
 
             sync_frame,
 
-            text="Fine tune: +0 ms | Total Bluetooth audio delay: 190 ms",
+            text="Fine tune: +0 ms | Total Bluetooth audio delay: 185 ms",
 
         )
 
