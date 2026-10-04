@@ -82,6 +82,7 @@ class CastingApp(tk.Tk):
 
         self.bluetooth_monitor_job = None
         self.bluetooth_was_connected = False
+        self.bluetooth_routed_sink = None
 
 
 
@@ -1292,7 +1293,12 @@ class CastingApp(tk.Tk):
 
 
 
-    def route_audio_to_bluetooth(self, mac, wait_for_sink=False):
+    def route_audio_to_bluetooth(
+        self,
+        mac,
+        wait_for_sink=False,
+        initialize_volume=False,
+    ):
 
         sink = None
 
@@ -1326,7 +1332,10 @@ class CastingApp(tk.Tk):
 
         self.run_command(["pactl", "set-sink-mute", sink, "0"])
 
-
+        # Match the known-good terminal setup on the first route for each
+        # connection, but do not keep overriding the user's volume afterward.
+        if initialize_volume:
+            self.run_command(["pactl", "set-sink-volume", sink, "80%"])
 
         # Move anything that was already playing when Bluetooth connected.
 
@@ -1404,61 +1413,52 @@ class CastingApp(tk.Tk):
 
                 sink = self.find_bluetooth_sink(mac)
 
-
-
                 if sink:
-
-                    current = self.run_command(
-
-                        ["pactl", "get-default-sink"]
-
-                    ).stdout.strip()
-
-
-
-                    # Route on a fresh connection, or repair routing if Linux
-
-                    # changed the default output behind us.
-
-                    if not self.bluetooth_was_connected or current != sink:
-
-                        self.route_audio_to_bluetooth(mac)
-
-                    self.bluetooth_status.config(
-
-                        text=(
-
-                            f"{TARGET_BLUETOOTH_NAME}: Connected | "
-
-                            "Audio routing: Automatic"
-
-                        )
-
+                    # BlueZ can report Connected before PipeWire exposes the
+                    # A2DP sink. Once the sink exists, always enforce routing
+                    # and move existing streams. This mirrors the terminal
+                    # sequence that reliably restores audio.
+                    first_route = self.bluetooth_routed_sink != sink
+                    routed_sink = self.route_audio_to_bluetooth(
+                        mac,
+                        wait_for_sink=False,
+                        initialize_volume=first_route,
                     )
 
+                    if routed_sink:
+                        self.bluetooth_routed_sink = routed_sink
+                        self.bluetooth_status.config(
+                            text=(
+                                f"{TARGET_BLUETOOTH_NAME}: Connected | "
+                                "Audio routing: Automatic"
+                            )
+                        )
+                    else:
+                        self.bluetooth_status.config(
+                            text=(
+                                f"{TARGET_BLUETOOTH_NAME}: Connected | "
+                                "Waiting for A2DP audio output..."
+                            )
+                        )
                 else:
-
+                    # Force an initial route as soon as the sink appears, even
+                    # if BlueZ was already connected on the previous poll.
+                    self.bluetooth_routed_sink = None
                     self.bluetooth_status.config(
-
                         text=(
-
                             f"{TARGET_BLUETOOTH_NAME}: Connected | "
-
                             "Waiting for A2DP audio output..."
-
                         )
-
                     )
 
-
-
-            elif self.bluetooth_was_connected:
-
-                # The receiver was disconnected. Do not force another output;
-
-                # PipeWire can fall back to the user's normal local device.
-
-                self.refresh_bluetooth()
+            else:
+                # Reset routing state so the same sink name is initialized
+                # again on the next connection.
+                self.bluetooth_routed_sink = None
+                if self.bluetooth_was_connected:
+                    # The receiver was disconnected. Do not force another
+                    # output; PipeWire can fall back to the local device.
+                    self.refresh_bluetooth()
 
 
 
@@ -1474,7 +1474,7 @@ class CastingApp(tk.Tk):
 
         self.bluetooth_monitor_job = self.after(
 
-            2000,
+            1000,
 
             self.monitor_bluetooth_connection,
 
@@ -1568,6 +1568,8 @@ class CastingApp(tk.Tk):
 
             wait_for_sink=True,
 
+            initialize_volume=True,
+
         )
 
 
@@ -1596,6 +1598,7 @@ class CastingApp(tk.Tk):
 
 
 
+        self.bluetooth_routed_sink = sink
         self.refresh_all()
 
         messagebox.showinfo(
