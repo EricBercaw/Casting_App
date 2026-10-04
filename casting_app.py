@@ -60,7 +60,7 @@ AUDIO_DELAY_STEP_MS = 5
 DELAY_SINK_NAME = "bt_delay"
 DELAY_SINK_DESCRIPTION = "Living Room Audio (Synced)"
 
-BLUETOOTH_VOLUME_DEFAULT = 50
+BLUETOOTH_VOLUME_DEFAULT = 40
 BLUETOOTH_VOLUME_MIN = 0
 BLUETOOTH_VOLUME_MAX = 100
 BLUETOOTH_VOLUME_STEP = 1
@@ -82,7 +82,7 @@ class CastingApp(tk.Tk):
 
         self.title("Apple TV Cast")
 
-        self.geometry("740x930")
+        self.geometry("820x1000")
 
         self.resizable(True, True)
 
@@ -121,7 +121,15 @@ class CastingApp(tk.Tk):
         self.bluetooth_volume = tk.IntVar(
             value=self.load_saved_volume()
         )
+        # Higher-DPI Tk rendering
+        try:
+            self.tk.call("tk", "scaling", 1.35)
+        except Exception:
+            pass
+
+        self.setup_dark_theme()
         self.create_ui()
+        self.style_native_sliders()
 
         self.refresh_all()
         self.start_bluetooth_monitor()
@@ -136,11 +144,350 @@ class CastingApp(tk.Tk):
 
 
 
+
+    def setup_dark_theme(self):
+        """Configure the app's dark visual theme."""
+
+        self.ui_bg = "#000000"
+        self.ui_panel = "#0d0d0d"
+        self.ui_panel_alt = "#181818"
+        self.ui_border = "#3a3a3a"
+
+        self.ui_text = "#ffffff"
+        self.ui_muted = "#c0c0c0"
+
+        self.ui_accent = "#ffffff"
+        self.ui_accent_hover = "#dddddd"
+
+        self.ui_danger = "#dc2626"
+        self.ui_danger_hover = "#ef4444"
+
+        self.configure(bg=self.ui_bg)
+
+        style = ttk.Style(self)
+
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        style.configure(
+            ".",
+            background=self.ui_bg,
+            foreground=self.ui_text,
+            font=("DejaVu Sans", 11),
+        )
+
+        style.configure(
+            "TFrame",
+            background=self.ui_bg,
+        )
+
+        style.configure(
+            "TLabel",
+            background=self.ui_bg,
+            foreground=self.ui_text,
+        )
+
+        style.configure(
+            "Title.TLabel",
+            background=self.ui_bg,
+            foreground="#ffffff",
+            font=("DejaVu Sans", 24, "bold"),
+        )
+
+        style.configure(
+            "Subtitle.TLabel",
+            background=self.ui_bg,
+            foreground=self.ui_muted,
+            font=("DejaVu Sans", 11),
+        )
+
+        style.configure(
+            "TLabelframe",
+            background=self.ui_bg,
+            foreground=self.ui_text,
+            bordercolor=self.ui_border,
+            lightcolor=self.ui_border,
+            darkcolor=self.ui_border,
+            borderwidth=1,
+            relief="solid",
+        )
+
+        style.configure(
+            "TLabelframe.Label",
+            background=self.ui_bg,
+            foreground="#ffffff",
+            font=("DejaVu Sans", 11, "bold"),
+        )
+
+        style.configure(
+            "TButton",
+            background=self.ui_panel_alt,
+            foreground=self.ui_text,
+            borderwidth=0,
+            focusthickness=0,
+            padding=(13, 8),
+            font=("DejaVu Sans", 11),
+        )
+
+        style.map(
+            "TButton",
+            background=[
+                ("pressed", "#1e293b"),
+                ("active", "#26344d"),
+                ("disabled", "#111827"),
+            ],
+            foreground=[
+                ("disabled", "#64748b"),
+            ],
+        )
+
+        style.configure(
+            "Accent.TButton",
+            background="#ffffff",
+            foreground="#000000",
+            borderwidth=0,
+            focusthickness=0,
+            padding=(14, 9),
+            font=("DejaVu Sans", 10, "bold"),
+        )
+
+        style.map(
+            "Accent.TButton",
+            background=[
+                ("pressed", "#bfbfbf"),
+                ("active", "#e5e5e5"),
+                ("disabled", "#1e3a5f"),
+            ],
+            foreground=[
+                ("disabled", "#94a3b8"),
+            ],
+        )
+
+        style.configure(
+            "Danger.TButton",
+            background="#7f1d1d",
+            foreground="#ffffff",
+            borderwidth=0,
+            focusthickness=0,
+            padding=(14, 9),
+            font=("DejaVu Sans", 10, "bold"),
+        )
+
+        style.map(
+            "Danger.TButton",
+            background=[
+                ("pressed", "#991b1b"),
+                ("active", self.ui_danger_hover),
+            ],
+        )
+
+        style.configure(
+            "TRadiobutton",
+            background=self.ui_bg,
+            foreground=self.ui_text,
+            indicatorbackground=self.ui_panel_alt,
+            indicatormargin=5,
+        )
+
+        style.map(
+            "TRadiobutton",
+            background=[
+                ("active", self.ui_bg),
+                ("selected", self.ui_bg),
+            ],
+            foreground=[
+                ("active", "#ffffff"),
+                ("selected", "#ffffff"),
+            ],
+            indicatorbackground=[
+                ("selected", self.ui_accent),
+                ("active", self.ui_panel_alt),
+            ],
+        )
+
+        style.configure(
+            "White.Vertical.TScrollbar",
+            background="#ffffff",
+            troughcolor="#000000",
+            bordercolor="#000000",
+            lightcolor="#ffffff",
+            darkcolor="#ffffff",
+            arrowcolor="#000000",
+        )
+
+        style.map(
+            "White.Vertical.TScrollbar",
+            background=[
+                ("active", "#dddddd"),
+                ("pressed", "#bbbbbb"),
+            ],
+        )
+
+        style.configure(
+            "TCombobox",
+            fieldbackground=self.ui_panel_alt,
+            background=self.ui_panel_alt,
+            foreground=self.ui_text,
+            arrowcolor=self.ui_text,
+            bordercolor=self.ui_border,
+            lightcolor=self.ui_border,
+            darkcolor=self.ui_border,
+            padding=6,
+        )
+
+        style.map(
+            "TCombobox",
+            fieldbackground=[
+                ("readonly", self.ui_panel_alt),
+            ],
+            foreground=[
+                ("readonly", self.ui_text),
+            ],
+            selectbackground=[
+                ("readonly", self.ui_accent),
+            ],
+            selectforeground=[
+                ("readonly", "#ffffff"),
+            ],
+        )
+
+
+    def style_native_sliders(self):
+        """Dark styling for tkinter Scale widgets."""
+
+        for name in (
+            "audio_delay_scale",
+            "bluetooth_volume_scale",
+        ):
+            slider = getattr(self, name, None)
+
+            if slider is None:
+                continue
+
+            slider.configure(
+                bg=self.ui_bg,
+                fg=self.ui_text,
+                activebackground=self.ui_accent_hover,
+                troughcolor=self.ui_panel_alt,
+                highlightthickness=0,
+                bd=0,
+                relief="flat",
+            )
+
+
+
+    def _on_ui_mousewheel(self, event):
+        """Scroll the main UI with the mouse wheel."""
+
+        if not hasattr(self, "ui_canvas"):
+            return
+
+        if getattr(event, "num", None) == 4:
+            self.ui_canvas.yview_scroll(-3, "units")
+
+        elif getattr(event, "num", None) == 5:
+            self.ui_canvas.yview_scroll(3, "units")
+
+        elif getattr(event, "delta", 0):
+            direction = -1 if event.delta > 0 else 1
+            self.ui_canvas.yview_scroll(
+                direction * 3,
+                "units",
+            )
+
+
+    def _update_ui_scroll_region(self, _event=None):
+        if hasattr(self, "ui_canvas"):
+            self.ui_canvas.configure(
+                scrollregion=self.ui_canvas.bbox("all")
+            )
+
+
+    def _resize_scrollable_frame(self, event):
+        if (
+            hasattr(self, "ui_canvas")
+            and hasattr(self, "ui_canvas_window")
+        ):
+            self.ui_canvas.itemconfigure(
+                self.ui_canvas_window,
+                width=event.width,
+            )
+
+
     def create_ui(self):
 
-        main = ttk.Frame(self, padding=18)
+        scroll_container = ttk.Frame(self)
+        scroll_container.pack(
+            fill="both",
+            expand=True,
+        )
 
-        main.pack(fill="both", expand=True)
+        self.ui_canvas = tk.Canvas(
+            scroll_container,
+            bg=self.ui_bg,
+            highlightthickness=0,
+            bd=0,
+        )
+
+        self.ui_scrollbar = ttk.Scrollbar(
+            scroll_container,
+            orient="vertical",
+            command=self.ui_canvas.yview,
+            style="White.Vertical.TScrollbar",
+        )
+
+        self.ui_canvas.configure(
+            yscrollcommand=self.ui_scrollbar.set
+        )
+
+        self.ui_scrollbar.pack(
+            side="right",
+            fill="y",
+        )
+
+        self.ui_canvas.pack(
+            side="left",
+            fill="both",
+            expand=True,
+        )
+
+        main = ttk.Frame(
+            self.ui_canvas,
+            padding=18
+        )
+
+        self.ui_canvas_window = self.ui_canvas.create_window(
+            (0, 0),
+            window=main,
+            anchor="nw",
+        )
+
+        main.bind(
+            "<Configure>",
+            self._update_ui_scroll_region,
+        )
+
+        self.ui_canvas.bind(
+            "<Configure>",
+            self._resize_scrollable_frame,
+        )
+
+        self.bind_all(
+            "<MouseWheel>",
+            self._on_ui_mousewheel,
+        )
+
+        self.bind_all(
+            "<Button-4>",
+            self._on_ui_mousewheel,
+        )
+
+        self.bind_all(
+            "<Button-5>",
+            self._on_ui_mousewheel,
+        )
 
 
 
@@ -150,7 +497,7 @@ class CastingApp(tk.Tk):
 
             text="Apple TV Cast",
 
-            font=("Arial", 20, "bold"),
+            style="Title.TLabel",
 
         ).pack(anchor="w")
 
