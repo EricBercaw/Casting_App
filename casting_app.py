@@ -60,6 +60,14 @@ AUDIO_DELAY_STEP_MS = 5
 DELAY_SINK_NAME = "bt_delay"
 DELAY_SINK_DESCRIPTION = "Living Room Audio (Synced)"
 
+BLUETOOTH_VOLUME_DEFAULT = 80
+BLUETOOTH_VOLUME_MIN = 0
+BLUETOOTH_VOLUME_MAX = 100
+BLUETOOTH_VOLUME_STEP = 1
+BLUETOOTH_VOLUME_CONFIG = os.path.expanduser(
+    "~/.config/apple-tv-cast/volume"
+)
+
 
 
 
@@ -74,7 +82,7 @@ class CastingApp(tk.Tk):
 
         self.title("Apple TV Cast")
 
-        self.geometry("740x820")
+        self.geometry("740x930")
 
         self.resizable(True, True)
 
@@ -98,6 +106,7 @@ class CastingApp(tk.Tk):
 
 
 
+        self.bluetooth_volume_job = None
         self.screensaver_window_id = None
 
         self.screensaver_suspended = False
@@ -109,6 +118,9 @@ class CastingApp(tk.Tk):
 
 
 
+        self.bluetooth_volume = tk.IntVar(
+            value=self.load_saved_volume()
+        )
         self.create_ui()
 
         self.refresh_all()
@@ -388,6 +400,69 @@ class CastingApp(tk.Tk):
 
         # -------------------------------------------------
 
+
+        # -------------------------------------------------
+        # BLUETOOTH VOLUME
+        # -------------------------------------------------
+
+        volume_frame = ttk.LabelFrame(
+            main,
+            text="Bluetooth Volume",
+            padding=12,
+        )
+        volume_frame.pack(fill="x", pady=(18, 0))
+
+        ttk.Label(
+            volume_frame,
+            text=(
+                "Controls the loudness of Living Room Audio / ESP32. "
+                "This does not change the Apple TV video stream or "
+                "Bluetooth synchronization delay."
+            ),
+            wraplength=660,
+        ).pack(anchor="w")
+
+        volume_row = ttk.Frame(volume_frame)
+        volume_row.pack(fill="x", pady=(8, 0))
+
+        ttk.Label(
+            volume_row,
+            text="0%"
+        ).pack(side="left")
+
+        self.bluetooth_volume_scale = tk.Scale(
+            volume_row,
+            from_=BLUETOOTH_VOLUME_MIN,
+            to=BLUETOOTH_VOLUME_MAX,
+            resolution=BLUETOOTH_VOLUME_STEP,
+            orient="horizontal",
+            showvalue=False,
+            variable=self.bluetooth_volume,
+            command=self.bluetooth_volume_changed,
+            length=480,
+        )
+        self.bluetooth_volume_scale.pack(
+            side="left",
+            fill="x",
+            expand=True,
+            padx=10,
+        )
+
+        ttk.Label(
+            volume_row,
+            text="100%"
+        ).pack(side="left")
+
+        self.bluetooth_volume_status = ttk.Label(
+            volume_frame,
+            text=f"Volume: {self.bluetooth_volume.get()}%",
+        )
+        self.bluetooth_volume_status.pack(
+            anchor="w",
+            pady=(8, 0),
+        )
+
+
         # BLUETOOTH AUDIO SYNC
 
         # -------------------------------------------------
@@ -574,6 +649,103 @@ class CastingApp(tk.Tk):
 
         )
 
+
+
+
+    def load_saved_volume(self):
+        try:
+            with open(
+                BLUETOOTH_VOLUME_CONFIG,
+                "r",
+                encoding="utf-8",
+            ) as handle:
+                value = int(handle.read().strip())
+
+            return max(
+                BLUETOOTH_VOLUME_MIN,
+                min(BLUETOOTH_VOLUME_MAX, value),
+            )
+        except Exception:
+            return BLUETOOTH_VOLUME_DEFAULT
+
+
+    def save_bluetooth_volume(self):
+        try:
+            directory = os.path.dirname(
+                BLUETOOTH_VOLUME_CONFIG
+            )
+            os.makedirs(directory, exist_ok=True)
+
+            with open(
+                BLUETOOTH_VOLUME_CONFIG,
+                "w",
+                encoding="utf-8",
+            ) as handle:
+                handle.write(
+                    str(self.bluetooth_volume.get())
+                )
+        except Exception:
+            pass
+
+
+    def update_bluetooth_volume_status(self):
+        self.bluetooth_volume_status.config(
+            text=f"Volume: {self.bluetooth_volume.get()}%"
+        )
+
+
+    def bluetooth_volume_changed(self, _value=None):
+        self.update_bluetooth_volume_status()
+        self.save_bluetooth_volume()
+
+        if self.bluetooth_volume_job is not None:
+            try:
+                self.after_cancel(
+                    self.bluetooth_volume_job
+                )
+            except Exception:
+                pass
+
+        # Small debounce prevents dozens of pactl calls while
+        # dragging the slider.
+        self.bluetooth_volume_job = self.after(
+            80,
+            self.apply_bluetooth_volume,
+        )
+
+
+    def apply_bluetooth_volume(self):
+        self.bluetooth_volume_job = None
+
+        mac = self.get_target_bluetooth_mac()
+
+        if not mac or not self.is_bluetooth_connected(mac):
+            return
+
+        physical_sink = self.find_bluetooth_sink(mac)
+
+        if not physical_sink:
+            return
+
+        volume = self.bluetooth_volume.get()
+
+        self.run_command(
+            [
+                "pactl",
+                "set-sink-mute",
+                physical_sink,
+                "0",
+            ]
+        )
+
+        self.run_command(
+            [
+                "pactl",
+                "set-sink-volume",
+                physical_sink,
+                f"{volume}%",
+            ]
+        )
 
 
     def get_total_audio_delay_ms(self):
@@ -1952,7 +2124,7 @@ class CastingApp(tk.Tk):
 
         if initialize_volume:
 
-            self.run_command(["pactl", "set-sink-volume", physical_sink, "80%"])
+            self.run_command(["pactl", "set-sink-volume", physical_sink, f"{self.bluetooth_volume.get()}%"])
 
 
 
@@ -2035,7 +2207,7 @@ class CastingApp(tk.Tk):
                         self.bluetooth_status.config(
                             text=(
                                 f"{TARGET_BLUETOOTH_NAME}: Connected | "
-                                f"Audio routing: Automatic | Delay: {self.get_total_audio_delay_ms()} ms"
+                                f"Audio routing: Automatic | Delay: {self.get_total_audio_delay_ms()} ms | Volume: {self.bluetooth_volume.get()}%"
                             )
                         )
                     else:
@@ -2336,6 +2508,17 @@ class CastingApp(tk.Tk):
             self.audio_delay_job = None
 
 
+
+
+        if self.bluetooth_volume_job is not None:
+            try:
+                self.after_cancel(
+                    self.bluetooth_volume_job
+                )
+            except Exception:
+                pass
+
+            self.bluetooth_volume_job = None
 
         # Preserve ordinary Bluetooth audio when the app closes: remove the
 
