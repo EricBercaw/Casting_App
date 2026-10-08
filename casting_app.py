@@ -16,6 +16,8 @@ import tkinter as tk
 
 from tkinter import messagebox, ttk
 
+from virtual_cast_screen import VirtualScreenManager, VirtualScreenError
+
 
 
 # =========================================================
@@ -89,6 +91,9 @@ class CastingApp(tk.Tk):
 
 
         self.cast_process = None
+        self.cast_source = tk.StringVar(value="Active Screen")
+        self.original_display = os.environ.get("DISPLAY", ":0")
+        self.virtual_screen = VirtualScreenManager()
 
         self.bluetooth_devices = {}
 
@@ -349,7 +354,7 @@ class CastingApp(tk.Tk):
                 ("readonly", self.ui_accent),
             ],
             selectforeground=[
-                ("readonly", "#ffffff"),
+                ("readonly", "#000000"),
             ],
         )
 
@@ -530,6 +535,37 @@ class CastingApp(tk.Tk):
         cast_frame = ttk.LabelFrame(main, text="Apple TV", padding=12)
 
         cast_frame.pack(fill="x")
+
+        # Source selection: never change the physical display configuration.
+        ttk.Label(cast_frame, text="Casting Source").pack(anchor="w")
+        self.cast_source_combo = ttk.Combobox(
+            cast_frame,
+            textvariable=self.cast_source,
+            values=("Active Screen", "Virtual Screen"),
+            state="readonly",
+            width=27,
+        )
+        self.cast_source_combo.pack(anchor="w", pady=(6, 3))
+        self.cast_source_combo.bind(
+            "<<ComboboxSelected>>", self.cast_source_changed
+        )
+        self.cast_source_help = ttk.Label(
+            cast_frame, text="", wraplength=660,
+        )
+        self.cast_source_help.pack(anchor="w", pady=(2, 5))
+        self.virtual_source_actions = ttk.Frame(cast_frame)
+        self.virtual_source_actions.pack(anchor="w", pady=(3, 11))
+        ttk.Button(
+            self.virtual_source_actions,
+            text="View Virtual Screen",
+            command=self.view_virtual_screen,
+        ).pack(side="left")
+        ttk.Button(
+            self.virtual_source_actions,
+            text="Open Browser on Virtual Screen",
+            command=self.open_virtual_browser,
+        ).pack(side="left", padx=(10, 0))
+        self.update_cast_source_ui()
 
 
 
@@ -1443,6 +1479,56 @@ class CastingApp(tk.Tk):
 
 
 
+    # =====================================================
+    # PHYSICAL / VIRTUAL SCREEN SELECTION
+    # =====================================================
+
+    def update_cast_source_ui(self):
+        virtual = self.cast_source.get() == "Virtual Screen"
+        for button in self.virtual_source_actions.winfo_children():
+            button.config(state="normal" if virtual else "disabled")
+        self.cast_source_help.config(
+            text=(
+                "Independent headless desktop (:99). Use View Virtual Screen "
+                "to control it; minimize that window before gaming."
+                if virtual else
+                "Whatever is currently visible on your HDMI monitor."
+            )
+        )
+
+    def cast_source_changed(self, _event=None):
+        virtual = self.cast_source.get() == "Virtual Screen"
+        if virtual:
+            try:
+                self.virtual_screen.ensure_started()
+            except (VirtualScreenError, OSError) as error:
+                self.cast_source.set("Active Screen")
+                self.update_cast_source_ui()
+                messagebox.showerror("Virtual Screen", str(error))
+                return
+        self.update_cast_source_ui()
+        if virtual:
+            self.restart_cast_for_setting_change()
+        else:
+            # Switch capture back to the physical monitor BEFORE stopping :99.
+            # Keep the cleanup in finally, even when restarting casting fails.
+            try:
+                self.restart_cast_for_setting_change()
+            finally:
+                self.virtual_screen.stop()
+
+    def view_virtual_screen(self):
+        try:
+            self.virtual_screen.open_viewer()
+        except (VirtualScreenError, OSError) as error:
+            messagebox.showerror("Virtual Screen Preview", str(error))
+
+    def open_virtual_browser(self):
+        try:
+            self.virtual_screen.open_browser()
+        except (VirtualScreenError, OSError) as error:
+            messagebox.showerror("Virtual Screen Browser", str(error))
+
     def start_cast(self):
 
         self.restart_job = None
@@ -1477,6 +1563,19 @@ class CastingApp(tk.Tk):
 
 
 
+        # DoubleTake's X11 capture reads the DISPLAY variable. This changes
+        # the source only; it does not change the real monitor or LXQt workspace.
+        cast_env = os.environ.copy()
+        if self.cast_source.get() == "Virtual Screen":
+            try:
+                self.virtual_screen.ensure_started()
+                cast_env = self.virtual_screen.capture_environment()
+            except (VirtualScreenError, OSError) as error:
+                messagebox.showerror("Virtual Screen", str(error))
+                return
+        else:
+            cast_env["DISPLAY"] = self.original_display
+
         width, height = self.get_resolution()
 
         selected_resolution = self.resolution.get()
@@ -1499,7 +1598,7 @@ class CastingApp(tk.Tk):
 
                 "-hwaccel",
 
-                "vaapi",
+                "auto" if self.cast_source.get() == "Virtual Screen" else "vaapi",
 
                 "-fps",
 
@@ -1550,6 +1649,7 @@ class CastingApp(tk.Tk):
                 command,
 
                 cwd=os.path.dirname(DOUBLETAKE_PATH),
+                env=cast_env,
 
                 stdout=subprocess.DEVNULL,
 
@@ -1596,6 +1696,7 @@ class CastingApp(tk.Tk):
                     "Casting to Living Room Apple TV "
 
                     f"— {selected_resolution} ({width}x{height}) "
+                    f"— {self.cast_source.get()} "
 
                     "— Video Only | Audio stays on computer/Bluetooth "
 
@@ -2892,6 +2993,8 @@ class CastingApp(tk.Tk):
             release_screensaver=True,
 
         )
+
+        self.virtual_screen.stop()
 
         super().destroy()
 
