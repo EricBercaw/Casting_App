@@ -1,7 +1,7 @@
 """Virtual Lubuntu-style desktop for Apple TV Cast.
 
 Keeps physical X11 session untouched.  Captured desktop lives on a separate
-Xvfb server (:99), running its own LXQt panel/desktop and Openbox window manager.
+Xvfb server (:99), running its own PCManFM-Qt desktop and Openbox without an LXQt panel.
 All preview VNC connections are restricted to localhost.
 """
 
@@ -125,11 +125,10 @@ class VirtualScreenManager:
             ("Chromium", "chromium", "chromium"),
             ("Music Visualizer", "visualizer", "audio-x-generic"),
             ("Spotify Lite", "spotify", "multimedia-player"),
+            ("Terminal", "terminal", "utilities-terminal"),
         )
         for name, arg, icon in choices:
             path = self.desktop_dir / (name.replace(" ", "-").lower() + ".desktop")
-            if path.exists():
-                continue
             path.write_text(
                 "[Desktop Entry]\n"
                 "Type=Application\n"
@@ -141,9 +140,20 @@ class VirtualScreenManager:
                 encoding="utf-8",
             )
             path.chmod(0o755)
+            gio = shutil.which("gio")
+            if gio:
+                try:
+                    subprocess.run(
+                        [gio, "set", "-t", "string", str(path), "metadata::trusted", "true"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=2, check=False,
+                    )
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
 
     def _start_desktop_session(self):
-        required = ("dbus-run-session", "openbox", "lxqt-panel", "pcmanfm-qt")
+        required = ("dbus-run-session", "openbox", "pcmanfm-qt")
         missing = [cmd for cmd in required if not shutil.which(cmd)]
         if missing:
             raise VirtualScreenError(
@@ -167,7 +177,6 @@ class VirtualScreenManager:
             openbox --sm-disable &
             wm=$!
             pcmanfm-qt --desktop --profile=apple-tv-virtual &
-            lxqt-panel &
             if command -v lxqt-runner >/dev/null 2>&1; then
                 lxqt-runner &
             fi
